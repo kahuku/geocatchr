@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>GeoGuessr Duel Tracker</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        min-width: 360px;
+        padding: 16px;
+      }
+
+      h2 {
+        margin-top: 0;
+        font-size: 18px;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      button {
+        padding: 10px 14px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      #login {
+        background: #2563eb;
+        color: white;
+      }
+
+      #logout {
+        background: #e5e7eb;
+        color: #111827;
+      }
+
+      #refreshSummary {
+        background: #10b981;
+        color: white;
+        margin-top: 10px;
+      }
+
+      #output {
+        white-space: pre-wrap;
+        font-size: 12px;
+        color: #444;
+        margin-top: 12px;
+      }
+
+      .label {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 4px;
+      }
+
+      .value {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 12px;
+      }
+
+      th, td {
+        border-bottom: 1px solid #e5e7eb;
+        padding: 6px 4px;
+        text-align: left;
+      }
+
+      th {
+        font-size: 11px;
+        color: #666;
+      }
+
+      .empty-state {
+        font-size: 12px;
+        color: #666;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>GeoGuessr Duel Tracker</h2>
+
+    <div id="signedOutView" class="card">
+      <div class="label">Status</div>
+      <div class="value">Signed out</div>
+      <br />
+      <button id="login">Sign in</button>
+    </div>
+
+    <div id="signedInView" class="card hidden">
+      <div class="label">Status</div>
+      <div class="value">Signed in</div>
+      <br />
+
+      <div class="label">Email</div>
+      <div id="email" class="value">-</div>
+      <br />
+
+      <div class="label">User</div>
+      <div id="username" class="value">-</div>
+      <br />
+
+      <button id="logout">Sign out</button>
+      <button id="refreshSummary">Refresh Summary</button>
+
+      <div id="summaryContainer">
+        <div id="summaryEmpty" class="empty-state">No summary loaded yet.</div>
+        <table id="summaryTable" class="hidden">
+          <thead>
+            <tr>
+              <th>Country</th>
+              <th>Rounds</th>
+              <th>Avg Dist</th>
+              <th>Avg Dmg</th>
+            </tr>
+          </thead>
+          <tbody id="summaryTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="output"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
