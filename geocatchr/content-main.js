@@ -35,6 +35,7 @@
   function PatchedWebSocket(...args) {
     const ws = new OriginalWebSocket(...args);
 
+    // Intercept incoming messages (server -> client)
     ws.addEventListener("message", (event) => {
       const parsed = tryParseJson(event.data);
 
@@ -58,6 +59,30 @@
         );
       }
     });
+
+    // Intercept outgoing messages (client -> server) to catch SubscribeToLobby.
+    // This is sent by the GeoGuessr client when joining a new duel lobby and
+    // contains the authoritative playerId for the current user.
+    const originalSend = ws.send.bind(ws);
+    ws.send = function (data) {
+      const parsed = tryParseJson(data);
+
+      if (parsed?.code === "SubscribeToLobby" && parsed?.playerId) {
+        window.postMessage(
+          {
+            source: "geoguessr-duel-tracker",
+            type: "LOBBY_PLAYER_ID",
+            payload: {
+              playerId: parsed.playerId,
+              gameId: parsed.gameId ?? null
+            }
+          },
+          "*"
+        );
+      }
+
+      return originalSend(data);
+    };
 
     return ws;
   }

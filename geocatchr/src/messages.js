@@ -1,5 +1,5 @@
 import { MESSAGE_TYPES } from "./constants.js";
-import { fetchSummary, forwardDuelPayload } from "./api.js";
+import { fetchSummary, forwardDuelPayload, cachePlayerId } from "./api.js";
 import { login, logout } from "./auth.js";
 import { checkForExtensionUpdate } from "./updates.js";
 
@@ -27,6 +27,9 @@ export function registerMessageHandlers() {
       case MESSAGE_TYPES.DUEL_FINISHED:
       case MESSAGE_TYPES.DUEL_FINISHED_RAW:
         return respondAsync(sendResponse, () => forwardDuelPayload(message, sender));
+
+      case MESSAGE_TYPES.LOBBY_PLAYER_ID:
+        return respondAsync(sendResponse, () => cachePlayerId(message));
 
       case MESSAGE_TYPES.LOGIN:
         return respondAsync(sendResponse, login);
