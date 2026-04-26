@@ -1,0 +1,50 @@
+name: Require version bump
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  require-version-bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version files
+        run: |
+          git fetch origin "${{ github.base_ref }}"
+
+          CHANGED_FILES=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD)
+
+          echo "$CHANGED_FILES" | grep -qx "version.txt" || {
+            echo "❌ version.txt must be changed."
+            exit 1
+          }
+
+          echo "$CHANGED_FILES" | grep -qx "geocatchr/manifest.json" || {
+            echo "❌ manifest.json must be changed."
+            exit 1
+          }
+
+          VERSION_TXT=$(cat version.txt | tr -d '[:space:]')
+          MANIFEST_VERSION=$(python -c "import json; print(json.load(open('geocatchr/manifest.json'))['version'])")
+
+          if [ "$VERSION_TXT" != "$MANIFEST_VERSION" ]; then
+            echo "❌ version.txt and manifest.json versions do not match."
+            echo "version.txt: $VERSION_TXT"
+            echo "manifest.json: $MANIFEST_VERSION"
+            exit 1
+          fi
+
+          BASE_VERSION=$(git show "origin/${{ github.base_ref }}:version.txt" | tr -d '[:space:]')
+
+          if [ "$VERSION_TXT" = "$BASE_VERSION" ]; then
+            echo "❌ Version file was touched, but the version did not actually change."
+            exit 1
+          fi
+
+          echo "✅ Version bump looks good: $BASE_VERSION → $VERSION_TXT"
