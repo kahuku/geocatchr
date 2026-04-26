@@ -22,10 +22,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     POST /ingest-duel
 
-    Assumptions for this MVP:
+    Assumptions:
     - API Gateway HTTP API uses a JWT authorizer backed by Cognito.
     - Cognito user identity is read from requestContext.authorizer.jwt.claims.sub.
-    - The user's GeoGuessr player is the FIRST player on the BLUE team.
+    - The caller (Chrome extension) passes geoguessr_player_id in the request body.
+      This ID is captured from the outbound SubscribeToLobby WebSocket message
+      when a new duel lobby is joined, making it the authoritative source of truth
+      for which player belongs to the authenticated user — regardless of team colour
+      or position.
     - We archive the raw request body to S3.
     - We update one DynamoDB stats row per (user, real_country).
     """
@@ -49,19 +53,27 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not teams or not rounds:
             return response(400, {"error": "Missing teams or rounds in payload"})
 
-        blue_team, red_team = get_blue_and_red_teams(teams)
-        if not blue_team or not red_team:
-            return response(400, {"error": "Could not identify blue and red teams"})
-
-        user_player = get_first_player(blue_team)
-        opponent_player = get_first_player(red_team)
-
-        if not user_player:
-            return response(400, {"error": "Blue team has no player data"})
-
-        geoguessr_player_id = user_player.get("playerId")
+        # The extension captures this from the outbound SubscribeToLobby WS message
+        # and passes it along so we don't have to guess based on team colour.
+        geoguessr_player_id = body.get("geoguessr_player_id")
         if not geoguessr_player_id:
-            return response(400, {"error": "Could not determine GeoGuessr player ID from blue team"})
+            return response(400, {"error": "Missing geoguessr_player_id in request body"})
+
+        user_player, user_team, opponent_team = find_user_player_and_teams(
+            teams, geoguessr_player_id
+        )
+        if not user_player or not user_team:
+            return response(
+                400,
+                {
+                    "error": (
+                        f"Player '{geoguessr_player_id}' not found in any team. "
+                        "The cached player ID may be stale — rejoining a lobby should refresh it."
+                    )
+                },
+            )
+
+        opponent_player = get_first_player(opponent_team) if opponent_team else None
 
         # 1) Archive raw request JSON in S3
         raw_s3_key = archive_raw_request(
@@ -78,8 +90,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         print("duel_id:", duel_id)
         print("teams found:", len(teams))
         print("rounds found:", len(rounds))
-        print("blue team name:", blue_team.get("name") if blue_team else None)
-        print("red team name:", red_team.get("name") if red_team else None)
+        print("user team name:", user_team.get("name"))
+        print("opponent team name:", opponent_team.get("name") if opponent_team else None)
         print("user player id:", geoguessr_player_id)
 
         upsert_player_mapping(
@@ -92,12 +104,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         round_rows = build_round_rows(
             cognito_sub=cognito_sub,
             duel_id=duel_id,
-            blue_team=blue_team,
-            red_team=red_team,
+            user_team=user_team,
+            opponent_team=opponent_team,
             user_player=user_player,
             opponent_player=opponent_player,
             rounds=rounds,
-            game_won=did_blue_team_win(state, blue_team),
+            game_won=did_user_team_win(state, user_team),
         )
 
         print("round_rows count:", len(round_rows))
@@ -136,10 +148,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return response(500, {"error": "Internal server error", "detail": str(e)})
 
 
+# ---------------------------------------------------------------------------
+# Auth / parsing helpers
+# ---------------------------------------------------------------------------
+
 def get_authenticated_user(event: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Reads validated JWT claims from API Gateway HTTP API event.
-    """
+    """Reads validated JWT claims from API Gateway HTTP API event."""
     claims = (
         event.get("requestContext", {})
         .get("authorizer", {})
@@ -165,18 +179,27 @@ def parse_json_body(event: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"Invalid JSON body: {str(e)}")
 
 
-def get_blue_and_red_teams(teams: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    blue_team = None
-    red_team = None
+# ---------------------------------------------------------------------------
+# Player / team resolution
+# ---------------------------------------------------------------------------
 
+def find_user_player_and_teams(
+    teams: List[Dict[str, Any]],
+    geoguessr_player_id: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """
+    Searches all teams for the player whose playerId matches geoguessr_player_id.
+
+    Returns (user_player, user_team, opponent_team).
+    opponent_team is the first team that is not the user's team (None if only one team).
+    """
     for team in teams:
-        team_name = (team.get("name") or "").lower()
-        if team_name == "blue":
-            blue_team = team
-        elif team_name == "red":
-            red_team = team
+        for player in team.get("players") or []:
+            if player.get("playerId") == geoguessr_player_id:
+                opponent_team = next((t for t in teams if t is not team), None)
+                return player, team, opponent_team
 
-    return blue_team, red_team
+    return None, None, None
 
 
 def get_first_player(team: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -184,11 +207,15 @@ def get_first_player(team: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return players[0] if players else None
 
 
-def did_blue_team_win(state: Dict[str, Any], blue_team: Dict[str, Any]) -> bool:
+def did_user_team_win(state: Dict[str, Any], user_team: Dict[str, Any]) -> bool:
     result = state.get("result") or {}
     winning_team_id = result.get("winningTeamId")
-    return bool(winning_team_id and winning_team_id == blue_team.get("id"))
+    return bool(winning_team_id and winning_team_id == user_team.get("id"))
 
+
+# ---------------------------------------------------------------------------
+# S3 archiving
+# ---------------------------------------------------------------------------
 
 def archive_raw_request(
     bucket_name: str,
@@ -217,6 +244,10 @@ def archive_raw_request(
     return key
 
 
+# ---------------------------------------------------------------------------
+# DynamoDB writes
+# ---------------------------------------------------------------------------
+
 def upsert_player_mapping(
     cognito_sub: str,
     cognito_username: Optional[str],
@@ -225,14 +256,9 @@ def upsert_player_mapping(
     """
     Stores a simple user mapping row in a separate table.
 
-    Recommended table keys:
+    Table keys:
     - PK (string): COGNITO#<sub>
     - SK (string): PROFILE
-
-    This stores:
-    - cognito_sub
-    - cognito_username
-    - geoguessr_player_id
     """
     player_map_table.put_item(
         Item={
@@ -245,148 +271,14 @@ def upsert_player_mapping(
     )
 
 
-def build_round_rows(
-    cognito_sub: str,
-    duel_id: str,
-    blue_team: Dict[str, Any],
-    red_team: Dict[str, Any],
-    user_player: Dict[str, Any],
-    opponent_player: Optional[Dict[str, Any]],
-    rounds: List[Dict[str, Any]],
-    game_won: bool,
-) -> List[Dict[str, Any]]:
-    """
-    Produces one normalized row per round for the authenticated user.
-
-    Stored stats are aggregated later by real_country.
-
-    Row shape:
-    {
-        user_id,
-        duel_id,
-        round_num,
-        real_country,
-        points,
-        damage,
-        distance,
-        round_won,
-        geoguessr_player_id
-    }
-    """
-
-    user_guesses = {
-        guess["roundNumber"]: guess
-        for guess in (user_player.get("guesses") or [])
-        if "roundNumber" in guess
-    }
-    opponent_guesses = {
-        guess["roundNumber"]: guess
-        for guess in ((opponent_player or {}).get("guesses") or [])
-        if "roundNumber" in guess
-    }
-
-    blue_round_results = {
-        rr["roundNumber"]: rr
-        for rr in (blue_team.get("roundResults") or [])
-        if "roundNumber" in rr
-    }
-    red_round_results = {
-        rr["roundNumber"]: rr
-        for rr in (red_team.get("roundResults") or [])
-        if "roundNumber" in rr
-    }
-
-    rows: List[Dict[str, Any]] = []
-
-    for round_obj in rounds:
-        round_num = round_obj.get("roundNumber")
-        if round_num is None:
-            continue
-
-        pano = round_obj.get("panorama") or {}
-        user_guess = user_guesses.get(round_num) or {}
-        opp_guess = opponent_guesses.get(round_num) or {}
-        blue_result = blue_round_results.get(round_num) or {}
-        red_result = red_round_results.get(round_num) or {}
-
-        real_country = pano.get("countryCode") or "unknown"
-
-        points = int(
-            blue_result.get("score")
-            if blue_result.get("score") is not None
-            else user_guess.get("score", 0)
-        )
-        opp_points = int(
-            red_result.get("score")
-            if red_result.get("score") is not None
-            else opp_guess.get("score", 0)
-        )
-
-        # Damage dealt by you to opponent this round
-        outgoing_damage = float(blue_result.get("damageDealt", 0))
-
-        # Damage dealt by opponent to you this round
-        incoming_damage = float(red_result.get("damageDealt", 0))
-
-        # Prefer round-level damageMultiplier, fall back to roundResult multiplier
-        damage_multiplier = round_obj.get("damageMultiplier")
-        if damage_multiplier is None:
-            damage_multiplier = blue_result.get("multiplier")
-        if damage_multiplier is None:
-            damage_multiplier = 1
-
-        damage_multiplier = float(damage_multiplier) if damage_multiplier else 1.0
-
-        normalized_outgoing_damage = (
-            outgoing_damage / damage_multiplier if damage_multiplier > 0 else outgoing_damage
-        )
-        normalized_incoming_damage = (
-            incoming_damage / damage_multiplier if damage_multiplier > 0 else incoming_damage
-        )
-
-        # Positive = bad for you, negative = good for you
-        net_damage = normalized_incoming_damage - normalized_outgoing_damage
-
-        distance = float(user_guess.get("distance", 0.0))
-
-        row = {
-            "user_id": cognito_sub,
-            "geoguessr_player_id": user_player.get("playerId"),
-            "duel_id": duel_id,
-            "round_num": int(round_num),
-            "real_country": real_country,
-            "points": points,
-            # Best primary metric for analysis
-            "damage": net_damage,
-            "damage_multiplier": damage_multiplier,
-            "distance": distance,
-            "round_won": 1 if points > opp_points else 0,
-            "game_won": 1 if game_won else 0,
-        }
-        rows.append(row)
-
-    return rows
-
-
 def update_country_stats(row: Dict[str, Any]) -> None:
     """
     Updates one country summary row.
 
-    Recommended STATS table keys:
+    Table keys:
     - PK (string): USER#<cognito_sub>
     - SK (string): COUNTRY#<country_code>
-
-    Attributes stored:
-    - user_id
-    - geoguessr_player_id
-    - real_country
-    - rounds_played
-    - total_points
-    - total_damage_taken
-    - total_distance
-    - rounds_won
     """
-
     stats_table.update_item(
         Key={
             "PK": f"USER#{row['user_id']}",
@@ -415,12 +307,133 @@ def update_country_stats(row: Dict[str, Any]) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Round-level data extraction
+# ---------------------------------------------------------------------------
+
+def build_round_rows(
+    cognito_sub: str,
+    duel_id: str,
+    user_team: Dict[str, Any],
+    opponent_team: Optional[Dict[str, Any]],
+    user_player: Dict[str, Any],
+    opponent_player: Optional[Dict[str, Any]],
+    rounds: List[Dict[str, Any]],
+    game_won: bool,
+) -> List[Dict[str, Any]]:
+    """
+    Produces one normalized row per round for the authenticated user.
+
+    Row shape:
+    {
+        user_id, duel_id, round_num, real_country,
+        points, damage, damage_multiplier, distance,
+        round_won, game_won, geoguessr_player_id
+    }
+    """
+
+    user_guesses = {
+        guess["roundNumber"]: guess
+        for guess in (user_player.get("guesses") or [])
+        if "roundNumber" in guess
+    }
+    opponent_guesses = {
+        guess["roundNumber"]: guess
+        for guess in ((opponent_player or {}).get("guesses") or [])
+        if "roundNumber" in guess
+    }
+
+    user_round_results = {
+        rr["roundNumber"]: rr
+        for rr in (user_team.get("roundResults") or [])
+        if "roundNumber" in rr
+    }
+    opp_round_results = {
+        rr["roundNumber"]: rr
+        for rr in ((opponent_team or {}).get("roundResults") or [])
+        if "roundNumber" in rr
+    }
+
+    rows: List[Dict[str, Any]] = []
+
+    for round_obj in rounds:
+        round_num = round_obj.get("roundNumber")
+        if round_num is None:
+            continue
+
+        pano = round_obj.get("panorama") or {}
+        user_guess = user_guesses.get(round_num) or {}
+        opp_guess = opponent_guesses.get(round_num) or {}
+        user_result = user_round_results.get(round_num) or {}
+        opp_result = opp_round_results.get(round_num) or {}
+
+        real_country = pano.get("countryCode") or "unknown"
+
+        points = int(
+            user_result.get("score")
+            if user_result.get("score") is not None
+            else user_guess.get("score", 0)
+        )
+        opp_points = int(
+            opp_result.get("score")
+            if opp_result.get("score") is not None
+            else opp_guess.get("score", 0)
+        )
+
+        # Damage dealt by user to opponent this round
+        outgoing_damage = float(user_result.get("damageDealt", 0))
+
+        # Damage dealt by opponent to user this round
+        incoming_damage = float(opp_result.get("damageDealt", 0))
+
+        # Prefer round-level damageMultiplier, fall back to user roundResult multiplier
+        damage_multiplier = round_obj.get("damageMultiplier")
+        if damage_multiplier is None:
+            damage_multiplier = user_result.get("multiplier")
+        if damage_multiplier is None:
+            damage_multiplier = 1
+
+        damage_multiplier = float(damage_multiplier) if damage_multiplier else 1.0
+
+        normalized_outgoing_damage = (
+            outgoing_damage / damage_multiplier if damage_multiplier > 0 else outgoing_damage
+        )
+        normalized_incoming_damage = (
+            incoming_damage / damage_multiplier if damage_multiplier > 0 else incoming_damage
+        )
+
+        # Positive = bad for you, negative = good for you
+        net_damage = normalized_incoming_damage - normalized_outgoing_damage
+
+        distance = float(user_guess.get("distance", 0.0))
+
+        row = {
+            "user_id": cognito_sub,
+            "geoguessr_player_id": user_player.get("playerId"),
+            "duel_id": duel_id,
+            "round_num": int(round_num),
+            "real_country": real_country,
+            "points": points,
+            "damage": net_damage,
+            "damage_multiplier": damage_multiplier,
+            "distance": distance,
+            "round_won": 1 if points > opp_points else 0,
+            "game_won": 1 if game_won else 0,
+        }
+        rows.append(row)
+
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Response helper
+# ---------------------------------------------------------------------------
+
 def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            # lock this down to your extension origin later if you want
             "Access-Control-Allow-Origin": "*",
         },
         "body": json.dumps(body),
