@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "GeoGuessr Duel Tracker",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Captures DuelFinished websocket payloads and forwards them to a local endpoint.",
-  "permissions": ["identity", "storage"],
+  "permissions": ["identity", "storage", "alarms"],
   "host_permissions": [
     "https://www.geoguessr.com/*",
     "http://localhost:3000/*",
-    "https://us-east-1jhgrfzkpz.auth.us-east-1.amazoncognito.com/*"
+    "https://us-east-1jhgrfzkpz.auth.us-east-1.amazoncognito.com/*",
+    "https://raw.githubusercontent.com/kahuku/geocatchr/main/*"
   ],
   "background": {
     "service_worker": "service-worker.js"

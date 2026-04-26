@@ -1,5 +1,33 @@
 console.log("[Popup] popup.js loaded");
 
+function renderVersionText() {
+  const versionText = document.getElementById("versionText");
+  const currentVersion = chrome.runtime.getManifest().version;
+  versionText.textContent = `v${currentVersion}`;
+}
+
+async function renderUpdateBanner() {
+  const updateBanner = document.getElementById("updateBanner");
+  const latestVersionText = document.getElementById("latestVersionText");
+
+  const data = await chrome.storage.local.get(["updateStatus"]);
+  const updateStatus = data.updateStatus;
+
+  if (!updateStatus?.updateAvailable) {
+    updateBanner.classList.add("hidden");
+    return;
+  }
+
+  latestVersionText.textContent = `v${updateStatus.latestVersion}`;
+  updateBanner.classList.remove("hidden");
+}
+
+function requestUpdateCheck() {
+  chrome.runtime.sendMessage({ type: "CHECK_FOR_UPDATE" }, async () => {
+    await renderUpdateBanner();
+  });
+}
+
 function parseJwt(token) {
   try {
     const base64Url = token.split(".")[1];
@@ -174,6 +202,10 @@ document.getElementById("logout").addEventListener("click", async () => {
 });
 
 document.addEventListener("DOMContentLoaded", () => {
+  renderVersionText();
+  renderUpdateBanner();
+  requestUpdateCheck();
+
   renderAuthState();
 
   document.getElementById("refreshSummary").addEventListener("click", () => {

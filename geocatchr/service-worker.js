@@ -1,5 +1,76 @@
 const ENDPOINT_URL = "https://f53qk2aal4.execute-api.us-east-1.amazonaws.com/ingest-duel";
 const SUMMARY_ENDPOINT_URL = "https://f53qk2aal4.execute-api.us-east-1.amazonaws.com/summary";
+const VERSION_URL = "https://raw.githubusercontent.com/kahuku/geocatchr/main/";
+
+const CURRENT_VERSION = chrome.runtime.getManifest().version;
+const UPDATE_CHECK_ALARM = "check-extension-update";
+const UPDATE_CHECK_INTERVAL_MINUTES = 180;
+
+function compareVersions(a, b) {
+  const aParts = String(a).trim().split(".").map(Number);
+  const bParts = String(b).trim().split(".").map(Number);
+  const length = Math.max(aParts.length, bParts.length);
+
+  for (let i = 0; i < length; i++) {
+    const aNum = aParts[i] || 0;
+    const bNum = bParts[i] || 0;
+
+    if (aNum > bNum) return 1;
+    if (aNum < bNum) return -1;
+  }
+
+  return 0;
+}
+
+async function checkForExtensionUpdate() {
+  const currentVersion = chrome.runtime.getManifest().version;
+
+  try {
+    const response = await fetch(`${VERSION_URL}?t=${Date.now()}`, {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error(`Version check failed with status ${response.status}`);
+    }
+
+    const latestVersion = (await response.text()).trim();
+    const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
+
+    await chrome.storage.local.set({
+      updateStatus: {
+        checkedAt: new Date().toISOString(),
+        currentVersion,
+        latestVersion,
+        updateAvailable,
+        error: null
+      }
+    });
+  } catch (error) {
+    console.warn("[Update Check] Failed:", error);
+
+    await chrome.storage.local.set({
+      updateStatus: {
+        checkedAt: new Date().toISOString(),
+        currentVersion,
+        latestVersion: null,
+        updateAvailable: false,
+        error: String(error.message || error)
+      }
+    });
+  }
+}
+
+async function ensureUpdateAlarm() {
+  const existingAlarm = await chrome.alarms.get(UPDATE_CHECK_ALARM);
+
+  if (!existingAlarm) {
+    await chrome.alarms.create(UPDATE_CHECK_ALARM, {
+      delayInMinutes: 1,
+      periodInMinutes: UPDATE_CHECK_INTERVAL_MINUTES
+    });
+  }
+}
 
 async function fetchSummaryFromApi() {
   const { access_token } = await chrome.storage.local.get(["access_token"]);
@@ -161,7 +232,7 @@ const authUrl =
   console.log("[Auth] redirectUri exact:", JSON.stringify(redirectUri));
   console.log("[Auth] authUrl exact:", authUrl);
   console.log("[Auth] About to launch auth flow");
-console.log("[Auth] Full auth URL:", authUrl);
+  console.log("[Auth] Full auth URL:", authUrl);
 
   const responseUrl = await chrome.identity.launchWebAuthFlow({
     url: authUrl,
@@ -232,6 +303,14 @@ if (message?.type === "LOGIN") {
         console.error("[Auth] Logout failed:", error);
         sendResponse({ ok: false, error: error.message, stack: error.stack });
       });
+
+    return true;
+  }
+  if (message?.type === "CHECK_FOR_UPDATE") {
+    checkForExtensionUpdate()
+      .then(() => chrome.storage.local.get(["updateStatus"]))
+      .then((data) => sendResponse({ ok: true, updateStatus: data.updateStatus }))
+      .catch((error) => sendResponse({ ok: false, error: String(error.message || error) }));
 
     return true;
   }
@@ -312,3 +391,22 @@ async function signOutFromCognito() {
 
   console.log("[Auth] Local tokens cleared");
 }
+
+ensureUpdateAlarm();
+checkForExtensionUpdate();
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureUpdateAlarm();
+  checkForExtensionUpdate();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureUpdateAlarm();
+  checkForExtensionUpdate();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === UPDATE_CHECK_ALARM) {
+    checkForExtensionUpdate();
+  }
+});

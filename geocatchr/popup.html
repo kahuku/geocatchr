@@ -90,10 +90,38 @@
         color: #666;
         margin-top: 10px;
       }
+
+      .update-banner {
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        color: #92400e;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 12px;
+        font-size: 12px;
+      }
+
+      .update-banner a {
+        color: #92400e;
+        font-weight: 700;
+      }
+
+      .footer-version {
+        text-align: right;
+        font-size: 11px;
+        color: #777;
+        margin-top: 12px;
+      }
     </style>
   </head>
   <body>
     <h2>GeoGuessr Duel Tracker</h2>
+
+    <div id="updateBanner" class="update-banner hidden">
+  Update available:
+  <span id="latestVersionText"></span>.
+  <a href="https://github.com/YOUR_USERNAME/YOUR_REPO" target="_blank">Download latest version</a>
+</div>
 
     <div id="signedOutView" class="card">
       <div class="label">Status</div>
@@ -135,6 +163,8 @@
     </div>
 
     <div id="output"></div>
+
+    <div id="versionText" class="footer-version"></div>
 
     <script src="popup.js"></script>
   </body>
