@@ -2,6 +2,7 @@ import json
 import os
 from decimal import Decimal
 from typing import Any, Dict, List
+import pycountry
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -11,6 +12,11 @@ dynamodb = boto3.resource("dynamodb")
 STATS_TABLE_NAME = os.environ["STATS_TABLE_NAME"]
 stats_table = dynamodb.Table(STATS_TABLE_NAME)
 
+def get_country_name(code: str) -> str:
+    try:
+        return pycountry.countries.get(alpha_2=code.upper()).name
+    except:
+        return code.upper()
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     try:
@@ -31,8 +37,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             avg_distance = total_distance / rounds_played if rounds_played > 0 else 0
             avg_damage = total_damage_taken / rounds_played if rounds_played > 0 else 0
 
+            country_code = item.get("real_country", "unknown")
+
             countries.append({
-                "country": item.get("real_country", "unknown"),
+                "countryCode": country_code,
+                "countryName": get_country_name(country_code),
                 "totalRounds": rounds_played,
                 "avgDistance": round(avg_distance, 2),
                 "avgDamage": round(avg_damage, 2),
