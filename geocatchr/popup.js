@@ -1,32 +1,113 @@
-console.log("[Popup] popup.js loaded");
+/**
+ * GeoGuessr Duel Tracker - Popup
+ *
+ * Responsibilities:
+ * - Render auth state
+ * - Render user summary table
+ * - Render extension version/update status
+ * - Send user actions to the service worker
+ */
+
+const MESSAGE_TYPES = {
+  FETCH_SUMMARY: "FETCH_SUMMARY",
+  LOGIN: "LOGIN",
+  LOGOUT: "LOGOUT",
+  CHECK_FOR_UPDATE: "CHECK_FOR_UPDATE"
+};
+
+const elements = {};
+
+document.addEventListener("DOMContentLoaded", initializePopup);
+
+function initializePopup() {
+  cacheElements();
+  bindEventListeners();
+
+  renderVersionText();
+  renderUpdateBanner();
+  refreshUpdateStatus();
+  renderAuthState();
+}
+
+function cacheElements() {
+  elements.signedOutView = document.getElementById("signedOutView");
+  elements.signedInView = document.getElementById("signedInView");
+  elements.output = document.getElementById("output");
+
+  elements.email = document.getElementById("email");
+  elements.username = document.getElementById("username");
+
+  elements.loginButton = document.getElementById("login");
+  elements.logoutButton = document.getElementById("logout");
+  elements.refreshSummaryButton = document.getElementById("refreshSummary");
+
+  elements.summaryTable = document.getElementById("summaryTable");
+  elements.summaryTableBody = document.getElementById("summaryTableBody");
+  elements.summaryEmpty = document.getElementById("summaryEmpty");
+
+  elements.updateBanner = document.getElementById("updateBanner");
+  elements.latestVersionText = document.getElementById("latestVersionText");
+  elements.updateLink = document.getElementById("updateLink");
+  elements.versionText = document.getElementById("versionText");
+}
+
+function bindEventListeners() {
+  elements.loginButton.addEventListener("click", handleLogin);
+  elements.logoutButton.addEventListener("click", handleLogout);
+  elements.refreshSummaryButton.addEventListener("click", refreshSummary);
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (!response?.ok) {
+        reject(new Error(response?.error || "Request failed"));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Version + Updates                                                          */
+/* -------------------------------------------------------------------------- */
 
 function renderVersionText() {
-  const versionText = document.getElementById("versionText");
-  const currentVersion = chrome.runtime.getManifest().version;
-  versionText.textContent = `v${currentVersion}`;
+  elements.versionText.textContent = `v${chrome.runtime.getManifest().version}`;
 }
 
 async function renderUpdateBanner() {
-  const updateBanner = document.getElementById("updateBanner");
-  const latestVersionText = document.getElementById("latestVersionText");
-
-  const data = await chrome.storage.local.get(["updateStatus"]);
-  const updateStatus = data.updateStatus;
+  const { updateStatus } = await chrome.storage.local.get(["updateStatus"]);
 
   if (!updateStatus?.updateAvailable) {
-    updateBanner.classList.add("hidden");
+    elements.updateBanner.classList.add("hidden");
     return;
   }
 
-  latestVersionText.textContent = `v${updateStatus.latestVersion}`;
-  updateBanner.classList.remove("hidden");
+  elements.latestVersionText.textContent = `v${updateStatus.latestVersion}`;
+  elements.updateLink.href = updateStatus.downloadUrl || "https://github.com/kahuku/geocatchr";
+  elements.updateBanner.classList.remove("hidden");
 }
 
-function requestUpdateCheck() {
-  chrome.runtime.sendMessage({ type: "CHECK_FOR_UPDATE" }, async () => {
+async function refreshUpdateStatus() {
+  try {
+    await sendRuntimeMessage({ type: MESSAGE_TYPES.CHECK_FOR_UPDATE });
     await renderUpdateBanner();
-  });
+  } catch (error) {
+    console.warn("[Popup] Update check failed:", error);
+  }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Auth                                                                       */
+/* -------------------------------------------------------------------------- */
 
 function parseJwt(token) {
   try {
@@ -34,181 +115,119 @@ function parseJwt(token) {
     if (!base64Url) return null;
 
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const json = atob(base64);
-    return JSON.parse(json);
-  } catch (err) {
-    console.error("[Popup] Failed to parse JWT:", err);
+    return JSON.parse(atob(base64));
+  } catch (error) {
+    console.error("[Popup] Failed to parse JWT:", error);
     return null;
   }
 }
 
-function formatNumber(value, digits = 0) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "-";
-  return num.toFixed(digits);
-}
-
-function renderSummaryRows(rows) {
-  const summaryTable = document.getElementById("summaryTable");
-  const summaryTableBody = document.getElementById("summaryTableBody");
-  const summaryEmpty = document.getElementById("summaryEmpty");
-
-  summaryTableBody.innerHTML = "";
-
-  if (!Array.isArray(rows) || rows.length === 0) {
-    summaryTable.classList.add("hidden");
-    summaryEmpty.classList.remove("hidden");
-    summaryEmpty.textContent = "No summary data available.";
-    return;
-  }
-
-  summaryEmpty.classList.add("hidden");
-  summaryTable.classList.remove("hidden");
-
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-
-    const countryTd = document.createElement("td");
-    countryTd.textContent = row.country || "-";
-
-    const roundsTd = document.createElement("td");
-    roundsTd.textContent = formatNumber(row.totalRounds, 0);
-
-    const avgDistTd = document.createElement("td");
-    avgDistTd.textContent = formatNumber(row.avgDistance, 0);
-
-    const avgDamageTd = document.createElement("td");
-    avgDamageTd.textContent = formatNumber(row.avgDamage, 1);
-
-    tr.appendChild(countryTd);
-    tr.appendChild(roundsTd);
-    tr.appendChild(avgDistTd);
-    tr.appendChild(avgDamageTd);
-
-    summaryTableBody.appendChild(tr);
-  }
-}
-
 async function renderAuthState() {
-  const signedOutView = document.getElementById("signedOutView");
-  const signedInView = document.getElementById("signedInView");
-  const output = document.getElementById("output");
-  const emailEl = document.getElementById("email");
-  const usernameEl = document.getElementById("username");
-
-  const data = await chrome.storage.local.get([
-    "id_token",
-    "access_token",
-    "refresh_token"
-  ]);
-
-  console.log("[Popup] Stored auth data:", data);
+  const data = await chrome.storage.local.get(["id_token"]);
 
   if (!data.id_token) {
-    signedOutView.classList.remove("hidden");
-    signedInView.classList.add("hidden");
-    output.textContent = "";
-    renderSummaryRows([]);
+    showSignedOutView();
     return;
   }
 
   const claims = parseJwt(data.id_token);
-  console.log("[Popup] Parsed ID token claims:", claims);
 
-  signedOutView.classList.add("hidden");
-  signedInView.classList.remove("hidden");
-
-  emailEl.textContent = claims?.email || "(no email)";
-  usernameEl.textContent =
+  elements.email.textContent = claims?.email || "(no email)";
+  elements.username.textContent =
     claims?.["cognito:username"] ||
     claims?.name ||
     claims?.email ||
     "(unknown user)";
+
+  showSignedInView();
+}
+
+function showSignedOutView() {
+  elements.signedOutView.classList.remove("hidden");
+  elements.signedInView.classList.add("hidden");
+  elements.output.textContent = "";
+  renderSummaryRows([]);
+}
+
+function showSignedInView() {
+  elements.signedOutView.classList.add("hidden");
+  elements.signedInView.classList.remove("hidden");
+}
+
+async function handleLogin() {
+  elements.output.textContent = "Starting login...";
+
+  try {
+    await sendRuntimeMessage({ type: MESSAGE_TYPES.LOGIN });
+    elements.output.textContent = "Signed in successfully.";
+    await renderAuthState();
+  } catch (error) {
+    elements.output.textContent = error.message || "Login failed";
+  }
+}
+
+async function handleLogout() {
+  elements.output.textContent = "Signing out...";
+
+  try {
+    await sendRuntimeMessage({ type: MESSAGE_TYPES.LOGOUT });
+    elements.output.textContent = "Signed out.";
+    renderSummaryRows([]);
+    await renderAuthState();
+  } catch (error) {
+    elements.output.textContent = error.message || "Logout failed";
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Summary                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function formatNumber(value, digits = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num.toFixed(digits) : "-";
+}
+
+function renderSummaryRows(rows) {
+  elements.summaryTableBody.innerHTML = "";
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    elements.summaryTable.classList.add("hidden");
+    elements.summaryEmpty.classList.remove("hidden");
+    elements.summaryEmpty.textContent = "No summary data available.";
+    return;
+  }
+
+  elements.summaryEmpty.classList.add("hidden");
+  elements.summaryTable.classList.remove("hidden");
+
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+
+    tr.appendChild(createTableCell(row.country || "-"));
+    tr.appendChild(createTableCell(formatNumber(row.totalRounds, 0)));
+    tr.appendChild(createTableCell(formatNumber(row.avgDistance, 0)));
+    tr.appendChild(createTableCell(formatNumber(row.avgDamage, 1)));
+
+    elements.summaryTableBody.appendChild(tr);
+  }
+}
+
+function createTableCell(text) {
+  const td = document.createElement("td");
+  td.textContent = text;
+  return td;
 }
 
 async function refreshSummary() {
-  const output = document.getElementById("output");
-  output.textContent = "Refreshing summary...";
+  elements.output.textContent = "Refreshing summary...";
 
-  chrome.runtime.sendMessage({ type: "FETCH_SUMMARY" }, (response) => {
-    console.log("[Popup] FETCH_SUMMARY response:", response);
-    console.log("[Popup] runtime.lastError:", chrome.runtime.lastError);
-
-    if (chrome.runtime.lastError) {
-      output.textContent = `Runtime error: ${chrome.runtime.lastError.message}`;
-      return;
-    }
-
-    if (!response?.ok) {
-      output.textContent = response?.error || "Failed to load summary";
-      renderSummaryRows([]);
-      return;
-    }
-
+  try {
+    const response = await sendRuntimeMessage({ type: MESSAGE_TYPES.FETCH_SUMMARY });
     renderSummaryRows(response.rows || []);
-    output.textContent = `Loaded ${response.rows?.length || 0} summary rows.`;
-  });
-}
-
-document.getElementById("login").addEventListener("click", async () => {
-  console.log("[Popup] Sign in button clicked");
-
-  const output = document.getElementById("output");
-  output.textContent = "Starting login...";
-
-  chrome.runtime.sendMessage({ type: "LOGIN" }, async (response) => {
-    console.log("[Popup] LOGIN response:", response);
-    console.log("[Popup] runtime.lastError:", chrome.runtime.lastError);
-
-    if (chrome.runtime.lastError) {
-      output.textContent = `Runtime error: ${chrome.runtime.lastError.message}`;
-      return;
-    }
-
-    if (!response?.ok) {
-      output.textContent = response?.error || "Login failed";
-      return;
-    }
-
-    output.textContent = "Signed in successfully.";
-    await renderAuthState();
-  });
-});
-
-document.getElementById("logout").addEventListener("click", async () => {
-  console.log("[Popup] Sign out button clicked");
-
-  const output = document.getElementById("output");
-  output.textContent = "Signing out...";
-
-  chrome.runtime.sendMessage({ type: "LOGOUT" }, async (response) => {
-    console.log("[Popup] LOGOUT response:", response);
-    console.log("[Popup] runtime.lastError:", chrome.runtime.lastError);
-
-    if (chrome.runtime.lastError) {
-      output.textContent = `Runtime error: ${chrome.runtime.lastError.message}`;
-      return;
-    }
-
-    if (!response?.ok) {
-      output.textContent = response?.error || "Logout failed";
-      return;
-    }
-
-    output.textContent = "Signed out.";
+    elements.output.textContent = `Loaded ${response.rows?.length || 0} summary rows.`;
+  } catch (error) {
+    elements.output.textContent = error.message || "Failed to load summary";
     renderSummaryRows([]);
-    await renderAuthState();
-  });
-});
-
-document.addEventListener("DOMContentLoaded", () => {
-  renderVersionText();
-  renderUpdateBanner();
-  requestUpdateCheck();
-
-  renderAuthState();
-
-  document.getElementById("refreshSummary").addEventListener("click", () => {
-    refreshSummary();
-  });
-});
+  }
+}

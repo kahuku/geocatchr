@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GeoGuessr Duel Tracker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Captures DuelFinished websocket payloads and forwards them to a local endpoint.",
   "permissions": ["identity", "storage", "alarms"],
   "host_permissions": [
@@ -11,7 +11,8 @@
     "https://raw.githubusercontent.com/kahuku/geocatchr/main/*"
   ],
   "background": {
-    "service_worker": "service-worker.js"
+    "service_worker": "service-worker.js",
+    "type": "module"
   },
   "content_scripts": [
     {
