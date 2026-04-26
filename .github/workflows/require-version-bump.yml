@@ -25,7 +25,7 @@ jobs:
             exit 1
           }
 
-          echo "$CHANGED_FILES" | grep -qx "manifest.json" || {
+          echo "$CHANGED_FILES" | grep -qx "geocatchr/manifest.json" || {
             echo "❌ manifest.json must be changed."
             exit 1
           }
