@@ -1,9 +1,9 @@
 import { CONFIG } from "./config.js";
-import { getAccessToken } from "./storage.js";
+import { getValidAccessToken } from "./storage.js";
 import { fetchJson } from "./http.js";
 
 export async function fetchSummary() {
-  const accessToken = await getAccessToken();
+  const accessToken = await getValidAccessToken();
 
   const data = await fetchJson(CONFIG.api.summaryUrl, {
     method: "GET",
@@ -26,7 +26,7 @@ export async function fetchSummary() {
 }
 
 export async function forwardDuelPayload(message, sender) {
-  const accessToken = await getAccessToken();
+  const accessToken = await getValidAccessToken();
 
   const body = {
     receivedAt: new Date().toISOString(),

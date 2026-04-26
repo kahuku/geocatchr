@@ -111,16 +111,70 @@ async function exchangeCodeForTokens({ code, codeVerifier, redirectUri }) {
 export async function login() {
   const authResult = await startCognitoLogin();
   const tokens = await exchangeCodeForTokens(authResult);
+  const expiresAt = Date.now() + tokens.expires_in * 1000;
 
   await chrome.storage.local.set({
     [STORAGE_KEYS.ID_TOKEN]: tokens.id_token,
     [STORAGE_KEYS.ACCESS_TOKEN]: tokens.access_token,
     [STORAGE_KEYS.REFRESH_TOKEN]: tokens.refresh_token,
     [STORAGE_KEYS.TOKEN_TYPE]: tokens.token_type,
-    [STORAGE_KEYS.EXPIRES_IN]: tokens.expires_in
+    [STORAGE_KEYS.EXPIRES_IN]: tokens.expires_in,
+    [STORAGE_KEYS.EXPIRES_AT]: expiresAt
   });
 
   return { tokens };
+}
+
+export async function refreshAccessToken(refreshToken) {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: CONFIG.auth.clientId,
+    refresh_token: refreshToken
+  });
+
+  const response = await fetch(`${CONFIG.auth.cognitoDomain}/oauth2/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: body.toString()
+  });
+
+  const text = await response.text();
+
+  let tokens;
+  try {
+    tokens = JSON.parse(text);
+  } catch {
+    throw new Error("Failed to parse token refresh response");
+  }
+
+  if (!response.ok) {
+    console.warn("[Auth] Refresh token failed, clearing session");
+
+    await chrome.storage.local.remove([
+      "id_token",
+      "access_token",
+      "refresh_token",
+      "token_type",
+      "expires_in",
+      "expires_at"
+    ]);
+
+    throw new Error("Session expired. Please sign in again.");
+  }
+
+  const expiresAt = Date.now() + tokens.expires_in * 1000;
+
+  await chrome.storage.local.set({
+    id_token: tokens.id_token,
+    access_token: tokens.access_token,
+    token_type: tokens.token_type,
+    expires_in: tokens.expires_in,
+    expires_at: expiresAt
+  });
+
+  return tokens.access_token;
 }
 
 export async function logout() {

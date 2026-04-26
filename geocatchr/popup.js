@@ -29,6 +29,17 @@ function initializePopup() {
   renderAuthState();
 }
 
+function isAuthError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+
+  return (
+    message.includes("not signed in") ||
+    message.includes("session expired") ||
+    message.includes("unauthorized") ||
+    message.includes("401")
+  );
+}
+
 function cacheElements() {
   elements.signedOutView = document.getElementById("signedOutView");
   elements.signedInView = document.getElementById("signedInView");
@@ -229,5 +240,9 @@ async function refreshSummary() {
   } catch (error) {
     elements.output.textContent = error.message || "Failed to load summary";
     renderSummaryRows([]);
+
+    if (isAuthError(error)) {
+      await renderAuthState();
+    }
   }
 }
