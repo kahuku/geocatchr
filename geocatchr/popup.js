@@ -19,14 +19,19 @@ const elements = {};
 
 document.addEventListener("DOMContentLoaded", initializePopup);
 
-function initializePopup() {
+async function initializePopup() {
   cacheElements();
   bindEventListeners();
 
   renderVersionText();
   renderUpdateBanner();
   refreshUpdateStatus();
-  renderAuthState();
+
+  const isSignedIn = await renderAuthState();
+
+  if (isSignedIn) {
+    await refreshSummary();
+  }
 }
 
 function isAuthError(error) {
@@ -138,7 +143,7 @@ async function renderAuthState() {
 
   if (!data.id_token) {
     showSignedOutView();
-    return;
+    return false;
   }
 
   const claims = parseJwt(data.id_token);
@@ -151,6 +156,7 @@ async function renderAuthState() {
     "(unknown user)";
 
   showSignedInView();
+  return true;
 }
 
 function showSignedOutView() {
@@ -171,7 +177,10 @@ async function handleLogin() {
   try {
     await sendRuntimeMessage({ type: MESSAGE_TYPES.LOGIN });
     elements.output.textContent = "Signed in successfully.";
-    await renderAuthState();
+    const isSignedIn = await renderAuthState();
+    if (isSignedIn) {
+      await refreshSummary();
+    }
   } catch (error) {
     elements.output.textContent = error.message || "Login failed";
   }
