@@ -14,7 +14,8 @@ export async function fetchSummary() {
 
   const rows = Array.isArray(data?.countries)
     ? data.countries.map((item) => ({
-        country: item.country,
+        country: item.countryName || item.country || item.countryCode || "-",
+        countryCode: item.countryCode || item.country || "-",
         totalRounds: item.totalRounds ?? item.rounds_played ?? 0,
         avgDistance: item.avgDistance ?? item.avg_distance ?? 0,
         avgDamage: item.avgDamage ?? item.avg_damage ?? 0
