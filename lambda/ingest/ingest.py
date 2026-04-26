@@ -112,15 +112,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             game_won=did_user_team_win(state, user_team),
         )
 
-        print("round_rows count:", len(round_rows))
-        if round_rows:
-            print("first round row:", json.dumps(round_rows[0]))
+        print(f"round_rows count: {len(round_rows)}")
 
         if not round_rows:
             return response(400, {"error": "No round data could be extracted from payload"})
 
         for row in round_rows:
-            print("updating country stats for:", row["real_country"])
             update_country_stats(row)
 
         print("all country stats updated")
@@ -324,11 +321,16 @@ def build_round_rows(
     """
     Produces one normalized row per round for the authenticated user.
 
+    Multiplier note: each team's roundResults entry carries its own multiplier
+    reflecting what was active when that team dealt damage. We normalize each
+    side's raw damageDealt by *their own* multiplier so the values are
+    comparable across rounds with different multiplier tiers.
+
     Row shape:
     {
         user_id, duel_id, round_num, real_country,
-        points, damage, damage_multiplier, distance,
-        round_won, game_won, geoguessr_player_id
+        points, damage, user_multiplier, distance, round_won, game_won,
+        geoguessr_player_id
     }
     """
 
@@ -380,32 +382,39 @@ def build_round_rows(
             else opp_guess.get("score", 0)
         )
 
-        # Damage dealt by user to opponent this round
-        outgoing_damage = float(user_result.get("damageDealt", 0))
+        # Raw damage values — each sourced from the dealing team's roundResults.
+        outgoing_damage_raw = float(user_result.get("damageDealt", 0))
+        incoming_damage_raw = float(opp_result.get("damageDealt", 0))
 
-        # Damage dealt by opponent to user this round
-        incoming_damage = float(opp_result.get("damageDealt", 0))
+        # Each team's multiplier comes from their own roundResults entry for this
+        # round. Using the dealing team's multiplier as the divisor gives the true
+        # base-score equivalent of each damage number, making rounds with different
+        # multiplier tiers directly comparable.
+        user_multiplier = float(user_result.get("multiplier") or 1.0)
+        opp_multiplier = float(opp_result.get("multiplier") or 1.0)
 
-        # Prefer round-level damageMultiplier, fall back to user roundResult multiplier
-        damage_multiplier = round_obj.get("damageMultiplier")
-        if damage_multiplier is None:
-            damage_multiplier = user_result.get("multiplier")
-        if damage_multiplier is None:
-            damage_multiplier = 1
-
-        damage_multiplier = float(damage_multiplier) if damage_multiplier else 1.0
-
-        normalized_outgoing_damage = (
-            outgoing_damage / damage_multiplier if damage_multiplier > 0 else outgoing_damage
+        normalized_outgoing = (
+            outgoing_damage_raw / user_multiplier if user_multiplier > 0 else outgoing_damage_raw
         )
-        normalized_incoming_damage = (
-            incoming_damage / damage_multiplier if damage_multiplier > 0 else incoming_damage
+        normalized_incoming = (
+            incoming_damage_raw / opp_multiplier if opp_multiplier > 0 else incoming_damage_raw
         )
 
-        # Positive = bad for you, negative = good for you
-        net_damage = normalized_incoming_damage - normalized_outgoing_damage
+        # Positive = net damage taken (bad), negative = net damage dealt (good).
+        net_damage = normalized_incoming - normalized_outgoing
 
         distance = float(user_guess.get("distance", 0.0))
+        round_won = 1 if points > opp_points else 0
+
+        print(
+            f"  Round {round_num:>2} | country={real_country} | "
+            f"pts={points} opp_pts={opp_points} | "
+            f"out_dmg={outgoing_damage_raw:.0f} (x{user_multiplier}) "
+            f"in_dmg={incoming_damage_raw:.0f} (x{opp_multiplier}) | "
+            f"net_dmg={net_damage:.2f} | "
+            f"dist={distance:.0f}m | "
+            f"won={round_won}"
+        )
 
         row = {
             "user_id": cognito_sub,
@@ -415,9 +424,9 @@ def build_round_rows(
             "real_country": real_country,
             "points": points,
             "damage": net_damage,
-            "damage_multiplier": damage_multiplier,
+            "user_multiplier": user_multiplier,
             "distance": distance,
-            "round_won": 1 if points > opp_points else 0,
+            "round_won": round_won,
             "game_won": 1 if game_won else 0,
         }
         rows.append(row)
