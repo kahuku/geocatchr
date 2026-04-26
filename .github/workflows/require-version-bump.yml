@@ -31,7 +31,7 @@ jobs:
           }
 
           VERSION_TXT=$(cat version.txt | tr -d '[:space:]')
-          MANIFEST_VERSION=$(python -c "import json; print(json.load(open('manifest.json'))['version'])")
+          MANIFEST_VERSION=$(python -c "import json; print(json.load(open('geocatchr/manifest.json'))['version'])")
 
           if [ "$VERSION_TXT" != "$MANIFEST_VERSION" ]; then
             echo "❌ version.txt and manifest.json versions do not match."
