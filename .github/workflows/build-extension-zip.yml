@@ -1,0 +1,43 @@
+name: Build extension zip
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "geocatchr/**"
+      - ".github/workflows/build-extension-zip.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build geocatchr.zip
+        run: |
+          mkdir -p install
+          rm -f install/geocatchr.zip
+
+          cd geocatchr
+          zip -r ../install/geocatchr.zip . \
+            -x "*.DS_Store" \
+            -x "__MACOSX/*"
+
+      - name: Commit updated zip
+        run: |
+          if git diff --quiet -- install/geocatchr.zip; then
+            echo "No zip changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add install/geocatchr.zip
+          git commit -m "[BOT] Update geocatchr extension zip"
+          git push
