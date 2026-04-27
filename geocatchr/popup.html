@@ -2,171 +2,396 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>GeoGuessr Duel Tracker</title>
+    <title>GeoCatchr</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        min-width: 360px;
-        padding: 16px;
+      :root {
+        --bg: #090c13;
+        --bg-card: #10151f;
+        --bg-hover: #171d2b;
+        --bg-input: #1a2133;
+        --border: rgba(255,255,255,0.07);
+        --border-light: rgba(255,255,255,0.12);
+        --green: #00d97e;
+        --green-dim: rgba(0,217,126,0.10);
+        --green-glow: rgba(0,217,126,0.25);
+        --red: #ff4d4d;
+        --red-dim: rgba(255,77,77,0.10);
+        --amber: #f59e0b;
+        --amber-dim: rgba(245,158,11,0.13);
+        --text-primary: #edf2ff;
+        --text-secondary: #6b7fa3;
+        --text-muted: #3a4a68;
+        --font-display: 'Syne', sans-serif;
+        --font-mono: 'Space Mono', monospace;
+        --font-body: 'Inter', sans-serif;
+        --radius: 10px;
+        --radius-sm: 6px;
+        --tr: 0.17s ease;
       }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { width: 400px; background: var(--bg); color: var(--text-primary); font-family: var(--font-body); font-size: 13px; line-height: 1.5; overflow-x: hidden; }
+      body { padding-bottom: 4px; animation: fadeIn 0.25s ease; }
+      @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+      .hidden { display: none !important; }
 
-      h2 {
-        margin-top: 0;
-        font-size: 18px;
+      /* ── Header ── */
+      .header {
+        padding: 16px 18px 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: space-between;
+        position: relative; overflow: hidden;
       }
-
-      .hidden {
-        display: none;
+      .header::after {
+        content: '';
+        position: absolute; top: -60px; left: -30px;
+        width: 140px; height: 140px;
+        background: radial-gradient(circle, rgba(0,217,126,0.13) 0%, transparent 70%);
+        pointer-events: none;
       }
-
-      .card {
-        border: 1px solid #ddd;
+      .logo { display: flex; align-items: center; gap: 9px; }
+      .logo-mark {
+        width: 30px; height: 30px;
+        background: var(--green-dim);
+        border: 1px solid rgba(0,217,126,0.28);
         border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 12px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .logo-mark svg { width: 16px; height: 16px; }
+      .logo-text { font-family: var(--font-display); font-size: 16px; font-weight: 800; letter-spacing: -0.4px; }
+      .logo-text em { color: var(--green); font-style: normal; }
+      .version-chip {
+        font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+        background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+        border-radius: 4px; padding: 2px 7px; letter-spacing: 0.4px;
       }
 
-      button {
-        padding: 10px 14px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-
-      #login {
-        background: #2563eb;
-        color: white;
-      }
-
-      #logout {
-        background: #e5e7eb;
-        color: #111827;
-      }
-
-      #refreshSummary {
-        background: #10b981;
-        color: white;
-        margin-top: 10px;
-      }
-
-      #output {
-        white-space: pre-wrap;
-        font-size: 12px;
-        color: #444;
-        margin-top: 12px;
-      }
-
-      .label {
-        font-size: 12px;
-        color: #666;
-        margin-bottom: 4px;
-      }
-
-      .value {
-        font-size: 14px;
-        font-weight: 600;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 10px;
-        font-size: 12px;
-      }
-
-      th, td {
-        border-bottom: 1px solid #e5e7eb;
-        padding: 6px 4px;
-        text-align: left;
-      }
-
-      th {
-        font-size: 11px;
-        color: #666;
-      }
-
-      .empty-state {
-        font-size: 12px;
-        color: #666;
-        margin-top: 10px;
-      }
-
+      /* ── Update Banner ── */
       .update-banner {
-        background: #fef3c7;
-        border: 1px solid #f59e0b;
-        color: #92400e;
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 12px;
-        font-size: 12px;
+        margin: 10px 14px 0;
+        background: var(--amber-dim); border: 1px solid rgba(245,158,11,0.28);
+        border-radius: var(--radius-sm); padding: 8px 12px;
+        font-size: 11.5px; color: var(--amber);
+        display: flex; align-items: center; gap: 7px;
       }
+      .update-banner a { color: var(--amber); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
-      .update-banner a {
-        color: #92400e;
-        font-weight: 700;
-      }
+      /* ── Views ── */
+      .view { padding: 12px 14px 0; }
 
-      .footer-version {
-        text-align: right;
-        font-size: 11px;
-        color: #777;
-        margin-top: 12px;
+      /* ── Signed-Out ── */
+      .signin-card {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius); overflow: hidden;
       }
+      .signin-body {
+        padding: 26px 22px; text-align: center; border-bottom: 1px solid var(--border);
+      }
+      .signin-globe {
+        width: 50px; height: 50px; margin: 0 auto 14px;
+        background: var(--green-dim); border: 1px solid rgba(0,217,126,0.22);
+        border-radius: 14px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .signin-globe svg { width: 24px; height: 24px; }
+      .signin-body h3 { font-family: var(--font-display); font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+      .signin-body p { font-size: 12px; color: var(--text-secondary); line-height: 1.55; max-width: 220px; margin: 0 auto; }
+      .signin-foot { padding: 13px 18px; }
+
+      /* ── Buttons ── */
+      .btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 13px; border: none; border-radius: var(--radius-sm);
+        font-family: var(--font-body); font-size: 12.5px; font-weight: 600;
+        cursor: pointer; transition: all var(--tr); white-space: nowrap;
+      }
+      .btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+      .btn-primary {
+        background: var(--green); color: #051208;
+        width: 100%; justify-content: center; padding: 10px 16px; font-size: 13px;
+      }
+      .btn-primary:hover { background: #00f090; box-shadow: 0 0 18px var(--green-glow); }
+      .btn-primary:active { transform: scale(0.98); }
+      .btn-ghost {
+        background: rgba(255,255,255,0.04); color: var(--text-secondary);
+        border: 1px solid var(--border-light);
+      }
+      .btn-ghost:hover { background: rgba(255,255,255,0.07); color: var(--text-primary); }
+      .btn-ghost:active { transform: scale(0.98); }
+      .btn-accent {
+        background: var(--green-dim); color: var(--green);
+        border: 1px solid rgba(0,217,126,0.22);
+        flex: 1; justify-content: center;
+      }
+      .btn-accent:hover { background: rgba(0,217,126,0.18); box-shadow: 0 0 10px var(--green-glow); }
+      .btn-accent:active { transform: scale(0.98); }
+      .btn-accent.loading .refresh-icon { animation: spin 0.75s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* ── User Card ── */
+      .user-strip {
+        background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+      }
+      .user-row {
+        padding: 12px 14px; display: flex; align-items: center; gap: 11px;
+        border-bottom: 1px solid var(--border);
+      }
+      .avatar {
+        width: 34px; height: 34px; border-radius: 50%;
+        background: var(--green-dim); border: 1.5px solid rgba(0,217,126,0.28);
+        display: flex; align-items: center; justify-content: center;
+        font-family: var(--font-display); font-size: 13px; font-weight: 800;
+        color: var(--green); flex-shrink: 0; text-transform: uppercase;
+      }
+      .user-details { flex: 1; min-width: 0; }
+      .uname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .uemail { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .online-dot {
+        width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+        box-shadow: 0 0 6px var(--green); flex-shrink: 0;
+        animation: pulse 2.5s ease-in-out infinite;
+      }
+      @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.45; } }
+      .action-row { padding: 10px 14px; display: flex; gap: 7px; }
+
+      /* ── Stats Strip ── */
+      .stats-row { display: flex; gap: 6px; padding: 10px 14px 0; }
+      .stat-box {
+        flex: 1; background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius-sm); padding: 8px 10px; text-align: center;
+      }
+      .stat-val {
+        display: block; font-family: var(--font-display); font-size: 15px; font-weight: 800;
+        line-height: 1.2; color: var(--text-primary);
+      }
+      .stat-val.neg { color: var(--red); }
+      .stat-lbl { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+
+      /* ── Table Section ── */
+      .table-section { padding: 12px 14px 0; }
+      .table-head {
+        display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+      }
+      .section-label {
+        font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+        color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.1px;
+      }
+      .sort-group { display: flex; gap: 4px; }
+      .sort-pill {
+        background: none; border: 1px solid var(--border); border-radius: 4px;
+        color: var(--text-muted); font-family: var(--font-mono); font-size: 9px;
+        padding: 3px 7px; cursor: pointer; transition: all var(--tr);
+        text-transform: uppercase; letter-spacing: 0.5px;
+      }
+      .sort-pill:hover { border-color: var(--border-light); color: var(--text-secondary); }
+      .sort-pill.on { border-color: rgba(0,217,126,0.38); color: var(--green); background: var(--green-dim); }
+
+      /* Column headers */
+      .col-row {
+        display: grid; grid-template-columns: 1fr 44px 66px 68px;
+        padding: 0 10px 5px; gap: 4px;
+      }
+      .col-lbl { font-family: var(--font-mono); font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; }
+      .col-lbl:not(:first-child) { text-align: right; }
+
+      /* Scrollable list */
+      .c-list {
+        display: flex; flex-direction: column; gap: 3px;
+        max-height: 340px; overflow-y: auto;
+        scrollbar-width: thin; scrollbar-color: var(--bg-input) transparent;
+      }
+      .c-list::-webkit-scrollbar { width: 3px; }
+      .c-list::-webkit-scrollbar-thumb { background: var(--bg-input); border-radius: 4px; }
+
+      /* Country row */
+      .c-row {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius-sm); padding: 8px 10px;
+        display: grid; grid-template-columns: 1fr 44px 66px 68px;
+        align-items: center; gap: 4px;
+        transition: border-color var(--tr), background var(--tr);
+        position: relative; overflow: hidden;
+      }
+      .c-row::before {
+        content: '';
+        position: absolute; left: 0; top: 0; bottom: 0;
+        width: var(--bar, 0%);
+        background: var(--bar-color, rgba(255,77,77,0.055));
+        pointer-events: none;
+        transition: width 0.55s cubic-bezier(0.4,0,0.2,1);
+      }
+      .c-row:hover { border-color: var(--border-light); background: var(--bg-hover); }
+      .c-name {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 12px; font-weight: 500; min-width: 0; position: relative;
+      }
+      .flag { font-size: 14px; line-height: 1; flex-shrink: 0; }
+      .cname-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .c-rounds, .c-dist, .c-dmg {
+        font-family: var(--font-mono); text-align: right; position: relative;
+      }
+      .c-rounds { font-size: 10.5px; color: var(--text-secondary); }
+      .c-dist { font-size: 10px; color: var(--text-secondary); }
+      .c-dmg { font-size: 11.5px; font-weight: 700; }
+      .dmg-high { color: var(--red); }
+      .dmg-mid { color: var(--amber); }
+      .dmg-low { color: #6eb3ff; }
+      .dmg-pos { color: var(--green); }
+
+      /* Empty */
+      .empty-box {
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 26px 18px; text-align: center;
+      }
+      .empty-box .e-icon { font-size: 26px; margin-bottom: 10px; opacity: 0.45; }
+      .empty-box p { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
+
+      /* ── Status ── */
+      .status-bar {
+        margin: 10px 14px 0; padding: 7px 11px;
+        background: rgba(255,255,255,0.025); border: 1px solid var(--border);
+        border-radius: var(--radius-sm); font-size: 11px; color: var(--text-secondary);
+        display: flex; align-items: center; gap: 6px; min-height: 32px;
+      }
+      .status-bar:empty { display: none; }
+      .status-bar.ok { border-color: rgba(0,217,126,0.2); color: var(--green); background: var(--green-dim); }
+      .status-bar.err { border-color: rgba(255,77,77,0.2); color: var(--red); background: var(--red-dim); }
+      .s-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+      /* ── Footer ── */
+      .footer {
+        margin-top: 12px; padding: 9px 14px;
+        border-top: 1px solid var(--border);
+        display: flex; align-items: center; justify-content: space-between;
+      }
+      .footer-name { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); letter-spacing: 0.4px; }
+      .footer-name em { color: var(--green); font-style: normal; }
+      .footer-tag { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
     </style>
   </head>
   <body>
-    <h2>GeoGuessr Duel Tracker</h2>
 
-    <div id="updateBanner" class="update-banner hidden">
-  Update available:
-  <span id="latestVersionText"></span>.
-<a id="updateLink" href="https://github.com/kahuku/geocatchr" target="_blank">
-  Download latest version
-</a>
-</div>
-
-    <div id="signedOutView" class="card">
-      <div class="label">Status</div>
-      <div class="value">Signed out</div>
-      <br />
-      <button id="login">Sign in</button>
+    <!-- ── Header ── -->
+    <div class="header">
+      <div class="logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#00d97e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+        </div>
+        <span class="logo-text">Geo<em>Catchr</em></span>
+      </div>
+      <span class="version-chip" id="versionText"></span>
     </div>
 
-    <div id="signedInView" class="card hidden">
-      <div class="label">Status</div>
-      <div class="value">Signed in</div>
-      <br />
+    <!-- ── Update Banner ── -->
+    <div id="updateBanner" class="update-banner hidden">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Update available: <strong id="latestVersionText"></strong> — <a id="updateLink" href="https://github.com/kahuku/geocatchr" target="_blank">Download</a>
+    </div>
 
-      <div class="label">Email</div>
-      <div id="email" class="value">-</div>
-      <br />
-
-      <div class="label">User</div>
-      <div id="username" class="value">-</div>
-      <br />
-
-      <button id="logout">Sign out</button>
-      <button id="refreshSummary">Refresh Summary</button>
-
-      <div id="summaryContainer">
-        <div id="summaryEmpty" class="empty-state">No summary loaded yet.</div>
-        <table id="summaryTable" class="hidden">
-          <thead>
-            <tr>
-              <th>Country</th>
-              <th>Rounds</th>
-              <th>Avg Dist</th>
-              <th>Avg Dmg</th>
-            </tr>
-          </thead>
-          <tbody id="summaryTableBody"></tbody>
-        </table>
+    <!-- ── Signed Out ── -->
+    <div id="signedOutView" class="view hidden">
+      <div class="signin-card">
+        <div class="signin-body">
+          <div class="signin-globe">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#00d97e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 8v4l3 3"/>
+            </svg>
+          </div>
+          <h3>Track your duels</h3>
+          <p>Sign in to collect round data and see which countries cost you the most damage.</p>
+        </div>
+        <div class="signin-foot">
+          <button id="login" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            Sign in with GeoGuessr
+          </button>
+        </div>
       </div>
     </div>
 
-    <div id="output"></div>
+    <!-- ── Signed In ── -->
+    <div id="signedInView" class="view hidden">
 
-    <div id="versionText" class="footer-version"></div>
+      <!-- User strip -->
+      <div class="user-strip">
+        <div class="user-row">
+          <div class="avatar" id="userInitials">?</div>
+          <div class="user-details">
+            <div class="uname" id="username">—</div>
+            <div class="uemail" id="email">—</div>
+          </div>
+          <div class="online-dot"></div>
+        </div>
+        <div class="action-row">
+          <button id="logout" class="btn btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Sign out
+          </button>
+          <button id="refreshSummary" class="btn btn-accent">
+            <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            Refresh Summary
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-row hidden" id="statPills">
+        <div class="stat-box">
+          <span class="stat-val" id="statCountries">—</span>
+          <span class="stat-lbl">Countries</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-val" id="statRounds">—</span>
+          <span class="stat-lbl">Rounds</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-val neg" id="statWorstDmg">—</span>
+          <span class="stat-lbl">Worst Avg Dmg</span>
+        </div>
+      </div>
+
+      <!-- Country breakdown -->
+      <div class="table-section">
+        <div class="table-head">
+          <span class="section-label">Country Breakdown</span>
+          <div class="sort-group" id="sortControls">
+            <button class="sort-pill on" data-sort="dmg">Dmg</button>
+            <button class="sort-pill" data-sort="dist">Dist</button>
+            <button class="sort-pill" data-sort="rounds">Rnds</button>
+          </div>
+        </div>
+
+        <div id="summaryEmpty" class="empty-box">
+          <div class="e-icon">🗺️</div>
+          <p>No data yet.<br>Play some duels on GeoGuessr, then hit Refresh.</p>
+        </div>
+
+        <div id="summaryTable" class="hidden">
+          <div class="col-row">
+            <span class="col-lbl">Country</span>
+            <span class="col-lbl" style="text-align:right">Rnds</span>
+            <span class="col-lbl" style="text-align:right">Avg Dist</span>
+            <span class="col-lbl" style="text-align:right">Avg Dmg</span>
+          </div>
+          <div class="c-list" id="summaryTableBody"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar" id="output"></div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span class="footer-name">Geo<em>Catchr</em></span>
+      <span class="footer-tag">duel tracker</span>
+    </div>
 
     <script src="popup.js"></script>
   </body>
