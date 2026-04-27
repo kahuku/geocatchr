@@ -305,7 +305,7 @@
             </svg>
           </div>
           <h3>Track your duels</h3>
-          <p>Sign in to collect round data and see which countries cost you the most damage.</p>
+          <p>Sign in to collect round data and see your average net damage by country.</p>
         </div>
         <div class="signin-foot">
           <button id="login" class="btn btn-primary">
@@ -353,7 +353,7 @@
         </div>
         <div class="stat-box">
           <span class="stat-val neg" id="statWorstDmg">—</span>
-          <span class="stat-lbl">Worst Avg Dmg</span>
+          <span class="stat-lbl">Worst Net Dmg</span>
         </div>
       </div>
 
@@ -362,7 +362,7 @@
         <div class="table-head">
           <span class="section-label">Country Breakdown</span>
           <div class="sort-group" id="sortControls">
-            <button class="sort-pill on" data-sort="dmg">Dmg <span class="arrow">↓</span></button>
+            <button class="sort-pill on" data-sort="dmg">Net <span class="arrow">↓</span></button>
             <button class="sort-pill" data-sort="dist">Dist <span class="arrow"></span></button>
             <button class="sort-pill" data-sort="rounds">Rnds <span class="arrow"></span></button>
           </div>
@@ -378,7 +378,7 @@
             <span class="col-lbl">Country</span>
             <span class="col-lbl" style="text-align:right">Rnds</span>
             <span class="col-lbl" style="text-align:right">Avg Dist</span>
-            <span class="col-lbl" style="text-align:right">Avg Dmg</span>
+            <span class="col-lbl" style="text-align:right">Avg Net Dmg</span>
           </div>
           <div class="c-list" id="summaryTableBody"></div>
         </div>

@@ -82,7 +82,7 @@ const COUNTRY_CODE_OVERRIDES = {
 function normalizeCountryName(country) {
   const raw = String(country || "").trim();
   if (!raw) return "";
-  const key = raw.toLowerCase().replace(/[’]/g, "'").replace(/s+/g, " ");
+  const key = raw.toLowerCase().replace(/[’]/g, "'").replace(/\s+/g, " ");
   return COUNTRY_ALIASES[key] || raw;
 }
 
@@ -173,12 +173,12 @@ function bindEvents() {
 }
 
 function getDefaultSortDir(key) {
-  // Damage defaults to most painful first: more negative values first.
+  // Net damage defaults to best first. In ingestion, negative = net damage dealt (good), positive = net damage taken (bad).
   return key === "dmg" ? "asc" : "desc";
 }
 
 function sortLabel(key) {
-  if (key === "dmg") return "damage";
+  if (key === "dmg") return "net damage";
   if (key === "dist") return "distance";
   if (key === "rounds") return "rounds";
   return key;
@@ -343,17 +343,23 @@ function sorted(rows) {
 
 function dmgClass(dmg) {
   const v = Number(dmg);
-  if (v <= -1500) return "dmg-high";
-  if (v <= -800)  return "dmg-mid";
-  if (v < 0)      return "dmg-low";
+
+  // Backend ingestion defines net damage as:
+  //   positive = net damage taken (bad)
+  //   negative = net damage dealt (good)
+  if (v >= 1500) return "dmg-high";
+  if (v >= 800)  return "dmg-mid";
+  if (v > 0)     return "dmg-low";
   return "dmg-pos";
 }
 
 function barColor(dmg) {
   const v = Number(dmg);
-  if (v <= -1500) return "rgba(255,77,77,0.07)";
-  if (v <= -800)  return "rgba(245,158,11,0.07)";
-  if (v < 0)      return "rgba(110,179,255,0.06)";
+
+  // Match the signed net-damage convention above.
+  if (v >= 1500) return "rgba(255,77,77,0.07)";
+  if (v >= 800)  return "rgba(245,158,11,0.07)";
+  if (v > 0)     return "rgba(245,158,11,0.055)";
   return "rgba(0,217,126,0.06)";
 }
 
@@ -400,11 +406,12 @@ function renderStatPills(rows) {
   el.statPills.classList.remove("hidden");
 
   const totalRounds = rows.reduce((s, r) => s + (Number(r.totalRounds) || 0), 0);
-  const worstDmg = Math.min(...rows.map(r => Number(r.avgDamage) || 0));
+  const worstNetDmg = Math.max(...rows.map(r => Number(r.avgDamage) || 0), 0);
 
   el.statCountries.textContent = rows.length;
   el.statRounds.textContent = totalRounds;
-  el.statWorstDmg.textContent = worstDmg.toFixed(0);
+  el.statWorstDmg.textContent = worstNetDmg.toFixed(0);
+  el.statWorstDmg.className = `stat-val ${dmgClass(worstNetDmg)}`;
 }
 
 /* ── Status Bar ── */

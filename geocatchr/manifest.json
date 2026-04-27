@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GeoGuessr Duel Tracker",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Captures DuelFinished websocket payloads and forwards them to a local endpoint.",
   "permissions": [
     "identity",
