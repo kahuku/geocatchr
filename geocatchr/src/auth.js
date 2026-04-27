@@ -178,31 +178,19 @@ export async function refreshAccessToken(refreshToken) {
 }
 
 export async function logout() {
-  const redirectUri = chrome.identity.getRedirectURL();
-
-  const logoutUrl =
-    `${CONFIG.auth.cognitoDomain}/logout` +
-    `?client_id=${encodeURIComponent(CONFIG.auth.clientId)}` +
-    `&logout_uri=${encodeURIComponent(redirectUri)}`;
-
-  try {
-    await chrome.identity.launchWebAuthFlow({
-      url: logoutUrl,
-      interactive: true
-    });
-  } catch (error) {
-    console.warn("[Auth] Hosted logout failed. Clearing local tokens anyway.", error);
-  }
-
+  // Keep popup sign-out instant and reliable. Cognito's Hosted UI logout can
+  // hang or close without returning inside a Chrome extension popup, so local
+  // token cleanup is the source of truth for signing the extension out.
   await chrome.storage.local.remove([
     STORAGE_KEYS.ID_TOKEN,
     STORAGE_KEYS.ACCESS_TOKEN,
     STORAGE_KEYS.REFRESH_TOKEN,
     STORAGE_KEYS.TOKEN_TYPE,
     STORAGE_KEYS.EXPIRES_IN,
+    STORAGE_KEYS.EXPIRES_AT,
     STORAGE_KEYS.PKCE_VERIFIER,
     STORAGE_KEYS.OAUTH_STATE,
-    STORAGE_KEYS.EXPIRES_AT
+    STORAGE_KEYS.PLAYER_ID
   ]);
 
   return {};

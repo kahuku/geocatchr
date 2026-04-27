@@ -48,13 +48,67 @@ const FLAGS = {
   "Yemen": "🇾🇪", "Zambia": "🇿🇲", "Zimbabwe": "🇿🇼",
 };
 
-function getFlag(country) {
-  return FLAGS[country] || "🌐";
+const COUNTRY_ALIASES = {
+  "bolivia, plurinational state of": "Bolivia",
+  "brunei darussalam": "Brunei",
+  "cote d'ivoire": "Côte d’Ivoire",
+  "côte d'ivoire": "Côte d’Ivoire",
+  "czech republic": "Czechia",
+  "hong kong sar": "Hong Kong",
+  "iran, islamic republic of": "Iran",
+  "korea, republic of": "South Korea",
+  "korea, democratic people's republic of": "North Korea",
+  "lao people's democratic republic": "Laos",
+  "moldova, republic of": "Moldova",
+  "palestine, state of": "Palestine",
+  "russian federation": "Russia",
+  "syrian arab republic": "Syria",
+  "türkiye": "Turkey",
+  "turkiye": "Turkey",
+  "viet nam": "Vietnam",
+  "united states of america": "United States",
+  "usa": "United States",
+  "uk": "United Kingdom"
+};
+
+const COUNTRY_CODE_OVERRIDES = {
+  "Côte d’Ivoire": "CI",
+  "Cote d'Ivoire": "CI",
+  "Russia": "RU",
+  "Turkey": "TR",
+  "Vietnam": "VN"
+};
+
+function normalizeCountryName(country) {
+  const raw = String(country || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase().replace(/[’]/g, "'").replace(/s+/g, " ");
+  return COUNTRY_ALIASES[key] || raw;
+}
+
+function flagFromCountryCode(code) {
+  const value = String(code || "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(value)) return "";
+  return value
+    .split("")
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
+function getFlag(rowOrCountry) {
+  const country = typeof rowOrCountry === "string" ? rowOrCountry : rowOrCountry?.country;
+  const normalized = normalizeCountryName(country);
+  const code = typeof rowOrCountry === "object"
+    ? rowOrCountry?.countryCode || COUNTRY_CODE_OVERRIDES[normalized]
+    : COUNTRY_CODE_OVERRIDES[normalized];
+
+  return flagFromCountryCode(code) || FLAGS[normalized] || FLAGS[country] || "🌐";
 }
 
 /* ── State ── */
 let currentRows = [];
 let sortKey = "dmg"; // "dmg" | "dist" | "rounds"
+let sortDir = "asc"; // "asc" means smallest value first; "desc" means largest first
 
 const el = {};
 
@@ -63,6 +117,7 @@ document.addEventListener("DOMContentLoaded", init);
 async function init() {
   cache();
   bindEvents();
+  updateSortControls();
   renderVersion();
   renderUpdateBanner();
   refreshUpdateCheck();
@@ -104,10 +159,43 @@ function bindEvents() {
   el.sortControls.addEventListener("click", (e) => {
     const btn = e.target.closest(".sort-pill");
     if (!btn) return;
-    sortKey = btn.dataset.sort;
-    el.sortControls.querySelectorAll(".sort-pill").forEach(b => b.classList.remove("on"));
-    btn.classList.add("on");
+
+    if (sortKey === btn.dataset.sort) {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+    } else {
+      sortKey = btn.dataset.sort;
+      sortDir = getDefaultSortDir(sortKey);
+    }
+
+    updateSortControls();
     renderRows(currentRows);
+  });
+}
+
+function getDefaultSortDir(key) {
+  // Damage defaults to most painful first: more negative values first.
+  return key === "dmg" ? "asc" : "desc";
+}
+
+function sortLabel(key) {
+  if (key === "dmg") return "damage";
+  if (key === "dist") return "distance";
+  if (key === "rounds") return "rounds";
+  return key;
+}
+
+function updateSortControls() {
+  el.sortControls.querySelectorAll(".sort-pill").forEach((btn) => {
+    const isActive = btn.dataset.sort === sortKey;
+    btn.classList.toggle("on", isActive);
+    btn.setAttribute("aria-pressed", String(isActive));
+
+    const arrow = btn.querySelector(".arrow");
+    if (arrow) arrow.textContent = isActive ? (sortDir === "asc" ? "↑" : "↓") : "";
+
+    btn.title = isActive
+      ? `Sorting by ${sortLabel(sortKey)} ${sortDir === "asc" ? "ascending" : "descending"}. Click again to reverse.`
+      : `Sort by ${sortLabel(btn.dataset.sort)}.`;
   });
 }
 
@@ -185,13 +273,18 @@ async function handleLogin() {
 
 async function handleLogout() {
   setStatus("Signing out…");
+  el.logoutBtn.disabled = true;
+
   try {
     await sendMsg({ type: MSG.LOGOUT });
+    currentRows = [];
     renderRows([]);
-    await renderAuth();
+    showView("out");
     setStatus("Signed out.", "ok");
   } catch (e) {
     setStatus(e.message || "Logout failed.", "err");
+  } finally {
+    el.logoutBtn.disabled = false;
   }
 }
 
@@ -231,12 +324,20 @@ function fmtDist(v) {
 }
 
 /* Sort rows by current sortKey */
+function sortValue(row) {
+  if (sortKey === "dmg") return Number(row.avgDamage) || 0;
+  if (sortKey === "dist") return Number(row.avgDistance) || 0;
+  if (sortKey === "rounds") return Number(row.totalRounds) || 0;
+  return 0;
+}
+
 function sorted(rows) {
+  const direction = sortDir === "asc" ? 1 : -1;
+
   return [...rows].sort((a, b) => {
-    if (sortKey === "dmg")    return Number(a.avgDamage) - Number(b.avgDamage); // most negative first
-    if (sortKey === "dist")   return Number(b.avgDistance) - Number(a.avgDistance);
-    if (sortKey === "rounds") return Number(b.totalRounds) - Number(a.totalRounds);
-    return 0;
+    const delta = sortValue(a) - sortValue(b);
+    if (delta !== 0) return delta * direction;
+    return String(a.country || "").localeCompare(String(b.country || ""));
   });
 }
 
@@ -276,7 +377,7 @@ function renderRows(rows) {
     const dmg = Number(row.avgDamage) || 0;
     const pct = Math.min(100, (Math.abs(dmg) / maxAbsDmg) * 100).toFixed(1);
     const color = barColor(dmg);
-    const flag = getFlag(row.country || "");
+    const flag = getFlag(row);
 
     const div = document.createElement("div");
     div.className = "c-row";

@@ -14,6 +14,7 @@ export const STORAGE_KEYS = {
   REFRESH_TOKEN: "refresh_token",
   TOKEN_TYPE: "token_type",
   EXPIRES_IN: "expires_in",
+  EXPIRES_AT: "expires_at",
   PKCE_VERIFIER: "pkce_code_verifier",
   OAUTH_STATE: "oauth_state",
   UPDATE_STATUS: "updateStatus",

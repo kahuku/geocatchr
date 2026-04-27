@@ -32,7 +32,7 @@
         --tr: 0.17s ease;
       }
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body { width: 400px; background: var(--bg); color: var(--text-primary); font-family: var(--font-body); font-size: 13px; line-height: 1.5; overflow-x: hidden; }
+      html, body { width: 520px; background: var(--bg); color: var(--text-primary); font-family: var(--font-body); font-size: 13px; line-height: 1.5; overflow-x: hidden; }
       body { padding-bottom: 4px; animation: fadeIn 0.25s ease; }
       @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
       .hidden { display: none !important; }
@@ -79,7 +79,7 @@
       .update-banner a { color: var(--amber); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
       /* ── Views ── */
-      .view { padding: 12px 14px 0; }
+      .view { padding: 12px 18px 0; }
 
       /* ── Signed-Out ── */
       .signin-card {
@@ -157,20 +157,20 @@
       .action-row { padding: 10px 14px; display: flex; gap: 7px; }
 
       /* ── Stats Strip ── */
-      .stats-row { display: flex; gap: 6px; padding: 10px 14px 0; }
+      .stats-row { display: flex; gap: 10px; padding: 12px 18px 0; }
       .stat-box {
         flex: 1; background: var(--bg-card); border: 1px solid var(--border);
-        border-radius: var(--radius-sm); padding: 8px 10px; text-align: center;
+        border-radius: var(--radius-sm); padding: 10px 12px; text-align: center;
       }
       .stat-val {
-        display: block; font-family: var(--font-display); font-size: 15px; font-weight: 800;
-        line-height: 1.2; color: var(--text-primary);
+        display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 700;
+        line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: -0.8px;
       }
       .stat-val.neg { color: var(--red); }
-      .stat-lbl { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
+      .stat-lbl { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
 
       /* ── Table Section ── */
-      .table-section { padding: 12px 14px 0; }
+      .table-section { padding: 14px 18px 0; }
       .table-head {
         display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
       }
@@ -178,28 +178,29 @@
         font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
         color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.1px;
       }
-      .sort-group { display: flex; gap: 4px; }
+      .sort-group { display: flex; gap: 5px; }
       .sort-pill {
         background: none; border: 1px solid var(--border); border-radius: 4px;
-        color: var(--text-muted); font-family: var(--font-mono); font-size: 9px;
-        padding: 3px 7px; cursor: pointer; transition: all var(--tr);
+        color: var(--text-muted); font-family: var(--font-mono); font-size: 10px;
+        padding: 4px 8px; cursor: pointer; transition: all var(--tr);
         text-transform: uppercase; letter-spacing: 0.5px;
       }
       .sort-pill:hover { border-color: var(--border-light); color: var(--text-secondary); }
       .sort-pill.on { border-color: rgba(0,217,126,0.38); color: var(--green); background: var(--green-dim); }
+      .sort-pill .arrow { display: inline-block; width: 10px; margin-left: 3px; opacity: 0.9; }
 
       /* Column headers */
       .col-row {
-        display: grid; grid-template-columns: 1fr 44px 66px 68px;
-        padding: 0 10px 5px; gap: 4px;
+        display: grid; grid-template-columns: minmax(0, 1fr) 62px 92px 92px;
+        padding: 0 14px 8px; gap: 10px;
       }
-      .col-lbl { font-family: var(--font-mono); font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; }
+      .col-lbl { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; }
       .col-lbl:not(:first-child) { text-align: right; }
 
       /* Scrollable list */
       .c-list {
-        display: flex; flex-direction: column; gap: 3px;
-        max-height: 340px; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 6px;
+        max-height: 390px; overflow-y: auto;
         scrollbar-width: thin; scrollbar-color: var(--bg-input) transparent;
       }
       .c-list::-webkit-scrollbar { width: 3px; }
@@ -208,33 +209,33 @@
       /* Country row */
       .c-row {
         background: var(--bg-card); border: 1px solid var(--border);
-        border-radius: var(--radius-sm); padding: 8px 10px;
-        display: grid; grid-template-columns: 1fr 44px 66px 68px;
-        align-items: center; gap: 4px;
+        border-radius: var(--radius-sm); padding: 13px 14px; min-height: 54px;
+        display: grid; grid-template-columns: minmax(0, 1fr) 62px 92px 92px;
+        align-items: center; gap: 10px;
         transition: border-color var(--tr), background var(--tr);
-        position: relative; overflow: hidden;
+        position: relative; overflow: hidden; isolation: isolate;
       }
       .c-row::before {
         content: '';
         position: absolute; left: 0; top: 0; bottom: 0;
         width: var(--bar, 0%);
         background: var(--bar-color, rgba(255,77,77,0.055));
-        pointer-events: none;
+        pointer-events: none; z-index: 0;
         transition: width 0.55s cubic-bezier(0.4,0,0.2,1);
       }
       .c-row:hover { border-color: var(--border-light); background: var(--bg-hover); }
       .c-name {
-        display: flex; align-items: center; gap: 6px;
-        font-size: 12px; font-weight: 500; min-width: 0; position: relative;
+        display: flex; align-items: center; gap: 8px;
+        font-size: 14px; line-height: 1.2; font-weight: 700; min-width: 0; position: relative; z-index: 1;
       }
-      .flag { font-size: 14px; line-height: 1; flex-shrink: 0; }
+      .flag { font-size: 17px; line-height: 1; flex-shrink: 0; }
       .cname-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .c-rounds, .c-dist, .c-dmg {
-        font-family: var(--font-mono); text-align: right; position: relative;
+        font-family: var(--font-mono); text-align: right; position: relative; z-index: 1; line-height: 1.2;
       }
-      .c-rounds { font-size: 10.5px; color: var(--text-secondary); }
-      .c-dist { font-size: 10px; color: var(--text-secondary); }
-      .c-dmg { font-size: 11.5px; font-weight: 700; }
+      .c-rounds { font-size: 12.5px; color: var(--text-secondary); }
+      .c-dist { font-size: 12.5px; color: var(--text-secondary); }
+      .c-dmg { font-size: 12.5px; font-weight: 700; }
       .dmg-high { color: var(--red); }
       .dmg-mid { color: var(--amber); }
       .dmg-low { color: #6eb3ff; }
@@ -361,9 +362,9 @@
         <div class="table-head">
           <span class="section-label">Country Breakdown</span>
           <div class="sort-group" id="sortControls">
-            <button class="sort-pill on" data-sort="dmg">Dmg</button>
-            <button class="sort-pill" data-sort="dist">Dist</button>
-            <button class="sort-pill" data-sort="rounds">Rnds</button>
+            <button class="sort-pill on" data-sort="dmg">Dmg <span class="arrow">↓</span></button>
+            <button class="sort-pill" data-sort="dist">Dist <span class="arrow"></span></button>
+            <button class="sort-pill" data-sort="rounds">Rnds <span class="arrow"></span></button>
           </div>
         </div>
 
