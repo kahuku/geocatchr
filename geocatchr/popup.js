@@ -1,257 +1,423 @@
 /**
- * GeoGuessr Duel Tracker - Popup
- *
- * Responsibilities:
- * - Render auth state
- * - Render user summary table
- * - Render extension version/update status
- * - Send user actions to the service worker
+ * GeoCatchr — Popup
+ * Handles auth state, summary table with sorting, country flags, stat pills.
  */
 
-const MESSAGE_TYPES = {
-  FETCH_SUMMARY: "FETCH_SUMMARY",
-  LOGIN: "LOGIN",
-  LOGOUT: "LOGOUT",
-  CHECK_FOR_UPDATE: "CHECK_FOR_UPDATE"
+const MSG = {
+  FETCH_SUMMARY:    "FETCH_SUMMARY",
+  LOGIN:            "LOGIN",
+  LOGOUT:           "LOGOUT",
+  CHECK_FOR_UPDATE: "CHECK_FOR_UPDATE",
 };
 
-const elements = {};
+/* Country name → flag emoji map (top GeoGuessr countries) */
+const FLAGS = {
+  "Afghanistan": "🇦🇫", "Albania": "🇦🇱", "Algeria": "🇩🇿", "Andorra": "🇦🇩",
+  "Angola": "🇦🇴", "Argentina": "🇦🇷", "Armenia": "🇦🇲", "Australia": "🇦🇺",
+  "Austria": "🇦🇹", "Azerbaijan": "🇦🇿", "Bangladesh": "🇧🇩", "Belarus": "🇧🇾",
+  "Belgium": "🇧🇪", "Belize": "🇧🇿", "Benin": "🇧🇯", "Bhutan": "🇧🇹",
+  "Bolivia": "🇧🇴", "Bosnia and Herzegovina": "🇧🇦", "Botswana": "🇧🇼",
+  "Brazil": "🇧🇷", "Bulgaria": "🇧🇬", "Burkina Faso": "🇧🇫", "Cambodia": "🇰🇭",
+  "Cameroon": "🇨🇲", "Canada": "🇨🇦", "Chile": "🇨🇱", "China": "🇨🇳",
+  "Colombia": "🇨🇴", "Croatia": "🇭🇷", "Cuba": "🇨🇺", "Cyprus": "🇨🇾",
+  "Czechia": "🇨🇿", "Czech Republic": "🇨🇿", "Denmark": "🇩🇰", "Dominican Republic": "🇩🇴",
+  "Ecuador": "🇪🇨", "Egypt": "🇪🇬", "El Salvador": "🇸🇻", "Estonia": "🇪🇪",
+  "Ethiopia": "🇪🇹", "Finland": "🇫🇮", "France": "🇫🇷", "Georgia": "🇬🇪",
+  "Germany": "🇩🇪", "Ghana": "🇬🇭", "Greece": "🇬🇷", "Guatemala": "🇬🇹",
+  "Honduras": "🇭🇳", "Hong Kong": "🇭🇰", "Hungary": "🇭🇺", "Iceland": "🇮🇸",
+  "India": "🇮🇳", "Indonesia": "🇮🇩", "Iran": "🇮🇷", "Iraq": "🇮🇶",
+  "Ireland": "🇮🇪", "Israel": "🇮🇱", "Italy": "🇮🇹", "Japan": "🇯🇵",
+  "Jordan": "🇯🇴", "Kazakhstan": "🇰🇿", "Kenya": "🇰🇪", "Kosovo": "🇽🇰",
+  "Kuwait": "🇰🇼", "Kyrgyzstan": "🇰🇬", "Laos": "🇱🇦", "Latvia": "🇱🇻",
+  "Lebanon": "🇱🇧", "Lithuania": "🇱🇹", "Luxembourg": "🇱🇺", "Malaysia": "🇲🇾",
+  "Maldives": "🇲🇻", "Malta": "🇲🇹", "Mexico": "🇲🇽", "Moldova": "🇲🇩",
+  "Mongolia": "🇲🇳", "Montenegro": "🇲🇪", "Morocco": "🇲🇦", "Mozambique": "🇲🇿",
+  "Nepal": "🇳🇵", "Netherlands": "🇳🇱", "New Zealand": "🇳🇿", "Nicaragua": "🇳🇮",
+  "Nigeria": "🇳🇬", "North Macedonia": "🇲🇰", "Norway": "🇳🇴", "Oman": "🇴🇲",
+  "Pakistan": "🇵🇰", "Palestine": "🇵🇸", "Panama": "🇵🇦", "Paraguay": "🇵🇾",
+  "Peru": "🇵🇪", "Philippines": "🇵🇭", "Poland": "🇵🇱", "Portugal": "🇵🇹",
+  "Puerto Rico": "🇵🇷", "Qatar": "🇶🇦", "Romania": "🇷🇴", "Russia": "🇷🇺",
+  "Rwanda": "🇷🇼", "Saudi Arabia": "🇸🇦", "Senegal": "🇸🇳", "Serbia": "🇷🇸",
+  "Singapore": "🇸🇬", "Slovakia": "🇸🇰", "Slovenia": "🇸🇮", "Somalia": "🇸🇴",
+  "South Africa": "🇿🇦", "South Korea": "🇰🇷", "Spain": "🇪🇸", "Sri Lanka": "🇱🇰",
+  "Sweden": "🇸🇪", "Switzerland": "🇨🇭", "Taiwan": "🇹🇼", "Tajikistan": "🇹🇯",
+  "Tanzania": "🇹🇿", "Thailand": "🇹🇭", "Tunisia": "🇹🇳", "Turkey": "🇹🇷",
+  "Turkmenistan": "🇹🇲", "Uganda": "🇺🇬", "Ukraine": "🇺🇦",
+  "United Arab Emirates": "🇦🇪", "United Kingdom": "🇬🇧", "United States": "🇺🇸",
+  "Uruguay": "🇺🇾", "Uzbekistan": "🇺🇿", "Venezuela": "🇻🇪", "Vietnam": "🇻🇳",
+  "Yemen": "🇾🇪", "Zambia": "🇿🇲", "Zimbabwe": "🇿🇼",
+};
 
-document.addEventListener("DOMContentLoaded", initializePopup);
+const COUNTRY_ALIASES = {
+  "bolivia, plurinational state of": "Bolivia",
+  "brunei darussalam": "Brunei",
+  "cote d'ivoire": "Côte d’Ivoire",
+  "côte d'ivoire": "Côte d’Ivoire",
+  "czech republic": "Czechia",
+  "hong kong sar": "Hong Kong",
+  "iran, islamic republic of": "Iran",
+  "korea, republic of": "South Korea",
+  "korea, democratic people's republic of": "North Korea",
+  "lao people's democratic republic": "Laos",
+  "moldova, republic of": "Moldova",
+  "palestine, state of": "Palestine",
+  "russian federation": "Russia",
+  "syrian arab republic": "Syria",
+  "türkiye": "Turkey",
+  "turkiye": "Turkey",
+  "viet nam": "Vietnam",
+  "united states of america": "United States",
+  "usa": "United States",
+  "uk": "United Kingdom"
+};
 
-async function initializePopup() {
-  cacheElements();
-  bindEventListeners();
+const COUNTRY_CODE_OVERRIDES = {
+  "Côte d’Ivoire": "CI",
+  "Cote d'Ivoire": "CI",
+  "Russia": "RU",
+  "Turkey": "TR",
+  "Vietnam": "VN"
+};
 
-  renderVersionText();
+function normalizeCountryName(country) {
+  const raw = String(country || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase().replace(/[’]/g, "'").replace(/\s+/g, " ");
+  return COUNTRY_ALIASES[key] || raw;
+}
+
+function flagFromCountryCode(code) {
+  const value = String(code || "").trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(value)) return "";
+  return value
+    .split("")
+    .map((char) => String.fromCodePoint(127397 + char.charCodeAt(0)))
+    .join("");
+}
+
+function getFlag(rowOrCountry) {
+  const country = typeof rowOrCountry === "string" ? rowOrCountry : rowOrCountry?.country;
+  const normalized = normalizeCountryName(country);
+  const code = typeof rowOrCountry === "object"
+    ? rowOrCountry?.countryCode || COUNTRY_CODE_OVERRIDES[normalized]
+    : COUNTRY_CODE_OVERRIDES[normalized];
+
+  return flagFromCountryCode(code) || FLAGS[normalized] || FLAGS[country] || "🌐";
+}
+
+/* ── State ── */
+let currentRows = [];
+let sortKey = "dmg"; // "dmg" | "dist" | "rounds"
+let sortDir = "asc"; // "asc" means smallest value first; "desc" means largest first
+
+const el = {};
+
+document.addEventListener("DOMContentLoaded", init);
+
+async function init() {
+  cache();
+  bindEvents();
+  updateSortControls();
+  renderVersion();
   renderUpdateBanner();
-  refreshUpdateStatus();
+  refreshUpdateCheck();
 
-  const isSignedIn = await renderAuthState();
-
-  if (isSignedIn) {
-    await refreshSummary();
-  }
+  const signedIn = await renderAuth();
+  if (signedIn) await loadSummary();
 }
 
-function isAuthError(error) {
-  const message = String(error?.message || error || "").toLowerCase();
-
-  return (
-    message.includes("not signed in") ||
-    message.includes("session expired") ||
-    message.includes("unauthorized") ||
-    message.includes("401")
-  );
+/* ── Element Cache ── */
+function cache() {
+  el.signedOut      = document.getElementById("signedOutView");
+  el.signedIn       = document.getElementById("signedInView");
+  el.output         = document.getElementById("output");
+  el.email          = document.getElementById("email");
+  el.username       = document.getElementById("username");
+  el.userInitials   = document.getElementById("userInitials");
+  el.loginBtn       = document.getElementById("login");
+  el.logoutBtn      = document.getElementById("logout");
+  el.refreshBtn     = document.getElementById("refreshSummary");
+  el.summaryTable   = document.getElementById("summaryTable");
+  el.summaryBody    = document.getElementById("summaryTableBody");
+  el.summaryEmpty   = document.getElementById("summaryEmpty");
+  el.updateBanner   = document.getElementById("updateBanner");
+  el.latestVersion  = document.getElementById("latestVersionText");
+  el.updateLink     = document.getElementById("updateLink");
+  el.versionText    = document.getElementById("versionText");
+  el.statPills      = document.getElementById("statPills");
+  el.statCountries  = document.getElementById("statCountries");
+  el.statRounds     = document.getElementById("statRounds");
+  el.statWorstDmg   = document.getElementById("statWorstDmg");
+  el.sortControls   = document.getElementById("sortControls");
 }
 
-function cacheElements() {
-  elements.signedOutView = document.getElementById("signedOutView");
-  elements.signedInView = document.getElementById("signedInView");
-  elements.output = document.getElementById("output");
+function bindEvents() {
+  el.loginBtn.addEventListener("click", handleLogin);
+  el.logoutBtn.addEventListener("click", handleLogout);
+  el.refreshBtn.addEventListener("click", loadSummary);
 
-  elements.email = document.getElementById("email");
-  elements.username = document.getElementById("username");
+  el.sortControls.addEventListener("click", (e) => {
+    const btn = e.target.closest(".sort-pill");
+    if (!btn) return;
 
-  elements.loginButton = document.getElementById("login");
-  elements.logoutButton = document.getElementById("logout");
-  elements.refreshSummaryButton = document.getElementById("refreshSummary");
+    if (sortKey === btn.dataset.sort) {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+    } else {
+      sortKey = btn.dataset.sort;
+      sortDir = getDefaultSortDir(sortKey);
+    }
 
-  elements.summaryTable = document.getElementById("summaryTable");
-  elements.summaryTableBody = document.getElementById("summaryTableBody");
-  elements.summaryEmpty = document.getElementById("summaryEmpty");
-
-  elements.updateBanner = document.getElementById("updateBanner");
-  elements.latestVersionText = document.getElementById("latestVersionText");
-  elements.updateLink = document.getElementById("updateLink");
-  elements.versionText = document.getElementById("versionText");
+    updateSortControls();
+    renderRows(currentRows);
+  });
 }
 
-function bindEventListeners() {
-  elements.loginButton.addEventListener("click", handleLogin);
-  elements.logoutButton.addEventListener("click", handleLogout);
-  elements.refreshSummaryButton.addEventListener("click", refreshSummary);
+function getDefaultSortDir(key) {
+  // Net damage defaults to best first. In ingestion, negative = net damage dealt (good), positive = net damage taken (bad).
+  return key === "dmg" ? "asc" : "desc";
 }
 
-function sendRuntimeMessage(message) {
+function sortLabel(key) {
+  if (key === "dmg") return "net damage";
+  if (key === "dist") return "distance";
+  if (key === "rounds") return "rounds";
+  return key;
+}
+
+function updateSortControls() {
+  el.sortControls.querySelectorAll(".sort-pill").forEach((btn) => {
+    const isActive = btn.dataset.sort === sortKey;
+    btn.classList.toggle("on", isActive);
+    btn.setAttribute("aria-pressed", String(isActive));
+
+    const arrow = btn.querySelector(".arrow");
+    if (arrow) arrow.textContent = isActive ? (sortDir === "asc" ? "↑" : "↓") : "";
+
+    btn.title = isActive
+      ? `Sorting by ${sortLabel(sortKey)} ${sortDir === "asc" ? "ascending" : "descending"}. Click again to reverse.`
+      : `Sort by ${sortLabel(btn.dataset.sort)}.`;
+  });
+}
+
+/* ── Messaging ── */
+function sendMsg(msg) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-
-      if (!response?.ok) {
-        reject(new Error(response?.error || "Request failed"));
-        return;
-      }
-
-      resolve(response);
+    chrome.runtime.sendMessage(msg, (res) => {
+      if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+      if (!res?.ok) { reject(new Error(res?.error || "Request failed")); return; }
+      resolve(res);
     });
   });
 }
 
-/* -------------------------------------------------------------------------- */
-/* Version + Updates                                                          */
-/* -------------------------------------------------------------------------- */
-
-function renderVersionText() {
-  elements.versionText.textContent = `v${chrome.runtime.getManifest().version}`;
+/* ── Version & Updates ── */
+function renderVersion() {
+  el.versionText.textContent = `v${chrome.runtime.getManifest().version}`;
 }
 
 async function renderUpdateBanner() {
   const { updateStatus } = await chrome.storage.local.get(["updateStatus"]);
-
-  if (!updateStatus?.updateAvailable) {
-    elements.updateBanner.classList.add("hidden");
-    return;
-  }
-
-  elements.latestVersionText.textContent = `v${updateStatus.latestVersion}`;
-  elements.updateLink.href = updateStatus.downloadUrl || "https://github.com/kahuku/geocatchr";
-  elements.updateBanner.classList.remove("hidden");
+  if (!updateStatus?.updateAvailable) { el.updateBanner.classList.add("hidden"); return; }
+  el.latestVersion.textContent = `v${updateStatus.latestVersion}`;
+  el.updateLink.href = updateStatus.downloadUrl || "https://github.com/kahuku/geocatchr";
+  el.updateBanner.classList.remove("hidden");
 }
 
-async function refreshUpdateStatus() {
-  try {
-    await sendRuntimeMessage({ type: MESSAGE_TYPES.CHECK_FOR_UPDATE });
-    await renderUpdateBanner();
-  } catch (error) {
-    console.warn("[Popup] Update check failed:", error);
-  }
+async function refreshUpdateCheck() {
+  try { await sendMsg({ type: MSG.CHECK_FOR_UPDATE }); await renderUpdateBanner(); }
+  catch (e) { console.warn("[Popup] Update check failed:", e); }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Auth                                                                       */
-/* -------------------------------------------------------------------------- */
-
+/* ── Auth ── */
 function parseJwt(token) {
   try {
-    const base64Url = token.split(".")[1];
-    if (!base64Url) return null;
-
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(base64));
-  } catch (error) {
-    console.error("[Popup] Failed to parse JWT:", error);
-    return null;
-  }
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(b64));
+  } catch { return null; }
 }
 
-async function renderAuthState() {
-  const data = await chrome.storage.local.get(["id_token"]);
+async function renderAuth() {
+  const { id_token } = await chrome.storage.local.get(["id_token"]);
+  if (!id_token) { showView("out"); return false; }
 
-  if (!data.id_token) {
-    showSignedOutView();
-    return false;
-  }
+  const claims = parseJwt(id_token);
+  const name = claims?.["cognito:username"] || claims?.name || claims?.email || "Player";
+  const email = claims?.email || "";
 
-  const claims = parseJwt(data.id_token);
+  el.username.textContent = name;
+  el.email.textContent = email;
+  el.userInitials.textContent = name.slice(0, 2);
 
-  elements.email.textContent = claims?.email || "(no email)";
-  elements.username.textContent =
-    claims?.["cognito:username"] ||
-    claims?.name ||
-    claims?.email ||
-    "(unknown user)";
-
-  showSignedInView();
+  showView("in");
   return true;
 }
 
-function showSignedOutView() {
-  elements.signedOutView.classList.remove("hidden");
-  elements.signedInView.classList.add("hidden");
-  elements.output.textContent = "";
-  renderSummaryRows([]);
-}
-
-function showSignedInView() {
-  elements.signedOutView.classList.add("hidden");
-  elements.signedInView.classList.remove("hidden");
+function showView(which) {
+  el.signedOut.classList.toggle("hidden", which !== "out");
+  el.signedIn.classList.toggle("hidden",  which !== "in");
+  el.output.textContent = "";
+  if (which === "out") renderRows([]);
 }
 
 async function handleLogin() {
-  elements.output.textContent = "Starting login...";
-
+  setStatus("Connecting to GeoGuessr…");
   try {
-    await sendRuntimeMessage({ type: MESSAGE_TYPES.LOGIN });
-    elements.output.textContent = "Signed in successfully.";
-    const isSignedIn = await renderAuthState();
-    if (isSignedIn) {
-      await refreshSummary();
-    }
-  } catch (error) {
-    elements.output.textContent = error.message || "Login failed";
+    await sendMsg({ type: MSG.LOGIN });
+    const ok = await renderAuth();
+    if (ok) await loadSummary();
+    setStatus("Signed in.", "ok");
+  } catch (e) {
+    setStatus(e.message || "Login failed.", "err");
   }
 }
 
 async function handleLogout() {
-  elements.output.textContent = "Signing out...";
+  setStatus("Signing out…");
+  el.logoutBtn.disabled = true;
 
   try {
-    await sendRuntimeMessage({ type: MESSAGE_TYPES.LOGOUT });
-    elements.output.textContent = "Signed out.";
-    renderSummaryRows([]);
-    await renderAuthState();
-  } catch (error) {
-    elements.output.textContent = error.message || "Logout failed";
+    await sendMsg({ type: MSG.LOGOUT });
+    currentRows = [];
+    renderRows([]);
+    showView("out");
+    setStatus("Signed out.", "ok");
+  } catch (e) {
+    setStatus(e.message || "Logout failed.", "err");
+  } finally {
+    el.logoutBtn.disabled = false;
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Summary                                                                    */
-/* -------------------------------------------------------------------------- */
-
-function formatNumber(value, digits = 0) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num.toFixed(digits) : "-";
+/* ── Summary ── */
+async function loadSummary() {
+  el.refreshBtn.classList.add("loading");
+  setStatus("Refreshing summary…");
+  try {
+    const res = await sendMsg({ type: MSG.FETCH_SUMMARY });
+    currentRows = res.rows || [];
+    renderRows(currentRows);
+    renderStatPills(currentRows);
+    setStatus(`Loaded ${currentRows.length} countr${currentRows.length === 1 ? "y" : "ies"}.`, "ok");
+  } catch (e) {
+    setStatus(e.message || "Failed to load summary.", "err");
+    renderRows([]);
+    if (isAuthErr(e)) renderAuth();
+  } finally {
+    el.refreshBtn.classList.remove("loading");
+  }
 }
 
-function renderSummaryRows(rows) {
-  elements.summaryTableBody.innerHTML = "";
+function isAuthErr(e) {
+  const m = String(e?.message || e || "").toLowerCase();
+  return m.includes("not signed in") || m.includes("session expired") || m.includes("unauthorized") || m.includes("401");
+}
+
+function fmt(v, digits = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits) : "—";
+}
+
+function fmtDist(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n >= 1000 ? (n / 1000).toFixed(1) + "k" : n.toFixed(0);
+}
+
+/* Sort rows by current sortKey */
+function sortValue(row) {
+  if (sortKey === "dmg") return Number(row.avgDamage) || 0;
+  if (sortKey === "dist") return Number(row.avgDistance) || 0;
+  if (sortKey === "rounds") return Number(row.totalRounds) || 0;
+  return 0;
+}
+
+function sorted(rows) {
+  const direction = sortDir === "asc" ? 1 : -1;
+
+  return [...rows].sort((a, b) => {
+    const delta = sortValue(a) - sortValue(b);
+    if (delta !== 0) return delta * direction;
+    return String(a.country || "").localeCompare(String(b.country || ""));
+  });
+}
+
+function dmgClass(dmg) {
+  const v = Number(dmg);
+
+  // Backend ingestion defines net damage as:
+  //   positive = net damage taken (bad)
+  //   negative = net damage dealt (good)
+  if (v >= 1500) return "dmg-high";
+  if (v >= 800)  return "dmg-mid";
+  if (v > 0)     return "dmg-low";
+  return "dmg-pos";
+}
+
+function barColor(dmg) {
+  const v = Number(dmg);
+
+  // Match the signed net-damage convention above.
+  if (v >= 1500) return "rgba(255,77,77,0.07)";
+  if (v >= 800)  return "rgba(245,158,11,0.07)";
+  if (v > 0)     return "rgba(245,158,11,0.055)";
+  return "rgba(0,217,126,0.06)";
+}
+
+function renderRows(rows) {
+  el.summaryBody.innerHTML = "";
 
   if (!Array.isArray(rows) || rows.length === 0) {
-    elements.summaryTable.classList.add("hidden");
-    elements.summaryEmpty.classList.remove("hidden");
-    elements.summaryEmpty.textContent = "No summary data available.";
+    el.summaryTable.classList.add("hidden");
+    el.summaryEmpty.classList.remove("hidden");
+    el.statPills.classList.add("hidden");
     return;
   }
 
-  elements.summaryEmpty.classList.add("hidden");
-  elements.summaryTable.classList.remove("hidden");
+  el.summaryEmpty.classList.add("hidden");
+  el.summaryTable.classList.remove("hidden");
 
-  for (const row of rows) {
-    const tr = document.createElement("tr");
+  const data = sorted(rows);
+  const maxAbsDmg = Math.max(...data.map(r => Math.abs(Number(r.avgDamage) || 0)), 1);
 
-    tr.appendChild(createTableCell(row.country || "-"));
-    tr.appendChild(createTableCell(formatNumber(row.totalRounds, 0)));
-    tr.appendChild(createTableCell(formatNumber(row.avgDistance, 0)));
-    tr.appendChild(createTableCell(formatNumber(row.avgDamage, 1)));
+  data.forEach((row, i) => {
+    const dmg = Number(row.avgDamage) || 0;
+    const pct = Math.min(100, (Math.abs(dmg) / maxAbsDmg) * 100).toFixed(1);
+    const color = barColor(dmg);
+    const flag = getFlag(row);
 
-    elements.summaryTableBody.appendChild(tr);
-  }
+    const div = document.createElement("div");
+    div.className = "c-row";
+    div.style.cssText = `--bar:${pct}%;--bar-color:${color};animation-delay:${i * 30}ms`;
+    div.innerHTML = `
+      <div class="c-name">
+        <span class="flag">${flag}</span>
+        <span class="cname-text">${row.country || "—"}</span>
+      </div>
+      <div class="c-rounds">${fmt(row.totalRounds)}</div>
+      <div class="c-dist">${fmtDist(row.avgDistance)}</div>
+      <div class="c-dmg ${dmgClass(dmg)}">${fmt(dmg, 1)}</div>
+    `;
+    el.summaryBody.appendChild(div);
+  });
 }
 
-function createTableCell(text) {
-  const td = document.createElement("td");
-  td.textContent = text;
-  return td;
+function renderStatPills(rows) {
+  if (!rows || rows.length === 0) { el.statPills.classList.add("hidden"); return; }
+  el.statPills.classList.remove("hidden");
+
+  const totalRounds = rows.reduce((s, r) => s + (Number(r.totalRounds) || 0), 0);
+  const worstNetDmg = Math.max(...rows.map(r => Number(r.avgDamage) || 0), 0);
+
+  el.statCountries.textContent = rows.length;
+  el.statRounds.textContent = totalRounds;
+  el.statWorstDmg.textContent = worstNetDmg.toFixed(0);
+  el.statWorstDmg.className = `stat-val ${dmgClass(worstNetDmg)}`;
 }
 
-async function refreshSummary() {
-  elements.output.textContent = "Refreshing summary...";
-
-  try {
-    const response = await sendRuntimeMessage({ type: MESSAGE_TYPES.FETCH_SUMMARY });
-    renderSummaryRows(response.rows || []);
-    elements.output.textContent = `Loaded ${response.rows?.length || 0} summary rows.`;
-  } catch (error) {
-    elements.output.textContent = error.message || "Failed to load summary";
-    renderSummaryRows([]);
-
-    if (isAuthError(error)) {
-      await renderAuthState();
-    }
-  }
+/* ── Status Bar ── */
+function setStatus(msg, type = "") {
+  el.output.className = "status-bar" + (type ? ` ${type}` : "");
+  el.output.innerHTML = msg
+    ? `<span class="s-dot"></span>${msg}`
+    : "";
 }
