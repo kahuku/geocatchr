@@ -26,10 +26,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         pk = f"USER#{cognito_sub}"
 
-        items = query_all_country_items(pk)
+        country_items = query_all_country_items(pk)
+        game_items = query_all_game_items(pk)
 
         countries = []
-        for item in items:
+        for item in country_items:
             rounds_played = int(item.get("rounds_played", 0) or 0)
             total_distance = float(item.get("total_distance", 0) or 0)
             total_damage_taken = float(item.get("total_damage_taken", 0) or 0)
@@ -50,9 +51,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Sort countries by average damage (lowest first = best countries first)
         countries.sort(key=lambda x: x["avgDamage"])
 
+        games = compute_games_summary(game_items)
+
         return response(200, {
             "ok": True,
-            "countries": countries
+            "countries": countries,
+            "games": games,
         })
 
     except Exception as e:
@@ -71,10 +75,18 @@ def get_cognito_sub(event: Dict[str, Any]) -> str | None:
 
 
 def query_all_country_items(pk: str) -> List[Dict[str, Any]]:
+    return _query_all(pk, "COUNTRY#")
+
+
+def query_all_game_items(pk: str) -> List[Dict[str, Any]]:
+    return _query_all(pk, "GAME#")
+
+
+def _query_all(pk: str, sk_prefix: str) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
     query_kwargs = {
-        "KeyConditionExpression": Key("PK").eq(pk) & Key("SK").begins_with("COUNTRY#")
+        "KeyConditionExpression": Key("PK").eq(pk) & Key("SK").begins_with(sk_prefix)
     }
 
     while True:
@@ -88,6 +100,51 @@ def query_all_country_items(pk: str) -> List[Dict[str, Any]]:
         query_kwargs["ExclusiveStartKey"] = last_evaluated_key
 
     return items
+
+
+def compute_games_summary(game_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Returns total wins/losses plus the current streak.
+
+    Game rows are keyed by SK = GAME#<duel_id>, so the natural query order is
+    alphabetical on duel_id rather than chronological. We sort by the
+    `played_at` attribute (ISO-8601 string set on first ingest) so the streak
+    walk reflects actual play order. Items without played_at sort to the end —
+    the empty-string fallback only matters for legacy rows written before this
+    field existed and won't bias the streak in any meaningful way.
+    """
+    if not game_items:
+        return {
+            "totalWon": 0,
+            "totalLost": 0,
+            "currentStreak": {"count": 0, "type": "none"},
+        }
+
+    sorted_games = sorted(
+        game_items,
+        key=lambda g: str(g.get("played_at") or ""),
+    )
+
+    won = sum(1 for g in sorted_games if int(g.get("game_won", 0) or 0) == 1)
+    lost = len(sorted_games) - won
+
+    # Walk backward from the most recent game; count consecutive matches.
+    last_outcome = int(sorted_games[-1].get("game_won", 0) or 0)
+    streak_count = 0
+    for game in reversed(sorted_games):
+        if int(game.get("game_won", 0) or 0) == last_outcome:
+            streak_count += 1
+        else:
+            break
+
+    return {
+        "totalWon": won,
+        "totalLost": lost,
+        "currentStreak": {
+            "count": streak_count,
+            "type": "win" if last_outcome == 1 else "loss",
+        },
+    }
 
 
 def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
