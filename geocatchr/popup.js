@@ -110,6 +110,14 @@ let currentRows = [];
 let sortKey = "dmg"; // "dmg" | "dist" | "rounds"
 let sortDir = "asc"; // "asc" means smallest value first; "desc" means largest first
 
+/* ── Carousel ── */
+const PILLS_VISIBLE = 3;
+const TOTAL_PILLS = 5;
+const MAX_CAROUSEL_INDEX = TOTAL_PILLS - PILLS_VISIBLE; // 2
+const PILL_WIDTH = 133;   // must match .stat-box flex-basis in popup.html
+const PILL_GAP = 10;      // must match .carousel-track gap in popup.html
+let carouselIndex = 0;
+
 const el = {};
 
 document.addEventListener("DOMContentLoaded", init);
@@ -148,6 +156,11 @@ function cache() {
   el.statCountries  = document.getElementById("statCountries");
   el.statRounds     = document.getElementById("statRounds");
   el.statWorstDmg   = document.getElementById("statWorstDmg");
+  el.statWL         = document.getElementById("statWL");
+  el.statStreak     = document.getElementById("statStreak");
+  el.carouselTrack  = document.getElementById("carouselTrack");
+  el.carouselPrev   = document.getElementById("carouselPrev");
+  el.carouselNext   = document.getElementById("carouselNext");
   el.sortControls   = document.getElementById("sortControls");
 }
 
@@ -155,6 +168,9 @@ function bindEvents() {
   el.loginBtn.addEventListener("click", handleLogin);
   el.logoutBtn.addEventListener("click", handleLogout);
   el.refreshBtn.addEventListener("click", loadSummary);
+
+  el.carouselPrev.addEventListener("click", () => moveCarousel(-1));
+  el.carouselNext.addEventListener("click", () => moveCarousel(1));
 
   el.sortControls.addEventListener("click", (e) => {
     const btn = e.target.closest(".sort-pill");
@@ -170,6 +186,20 @@ function bindEvents() {
     updateSortControls();
     renderRows(currentRows);
   });
+}
+
+function moveCarousel(delta) {
+  const next = Math.max(0, Math.min(MAX_CAROUSEL_INDEX, carouselIndex + delta));
+  if (next === carouselIndex) return;
+  carouselIndex = next;
+  updateCarousel();
+}
+
+function updateCarousel() {
+  const offset = carouselIndex * (PILL_WIDTH + PILL_GAP);
+  el.carouselTrack.style.transform = `translateX(-${offset}px)`;
+  el.carouselPrev.disabled = carouselIndex === 0;
+  el.carouselNext.disabled = carouselIndex >= MAX_CAROUSEL_INDEX;
 }
 
 function getDefaultSortDir(key) {
@@ -295,8 +325,9 @@ async function loadSummary() {
   try {
     const res = await sendMsg({ type: MSG.FETCH_SUMMARY });
     currentRows = res.rows || [];
+    const gameStats = res.games || null;
     renderRows(currentRows);
-    renderStatPills(currentRows);
+    renderStatPills(currentRows, gameStats);
     setStatus(`Loaded ${currentRows.length} countr${currentRows.length === 1 ? "y" : "ies"}.`, "ok");
   } catch (e) {
     setStatus(e.message || "Failed to load summary.", "err");
@@ -401,7 +432,7 @@ function renderRows(rows) {
   });
 }
 
-function renderStatPills(rows) {
+function renderStatPills(rows, gameStats) {
   if (!rows || rows.length === 0) { el.statPills.classList.add("hidden"); return; }
   el.statPills.classList.remove("hidden");
 
@@ -412,6 +443,45 @@ function renderStatPills(rows) {
   el.statRounds.textContent = totalRounds;
   el.statWorstDmg.textContent = worstNetDmg.toFixed(0);
   el.statWorstDmg.className = `stat-val ${dmgClass(worstNetDmg)}`;
+
+  renderGamePills(gameStats);
+
+  // Snap carousel back to the start whenever stats are re-rendered.
+  carouselIndex = 0;
+  updateCarousel();
+}
+
+function renderGamePills(gameStats) {
+  // Backend may not yet be redeployed — fall back to placeholder.
+  if (!gameStats) {
+    el.statWL.textContent = "—";
+    el.statWL.className = "stat-val";
+    el.statStreak.textContent = "—";
+    el.statStreak.className = "stat-val";
+    return;
+  }
+
+  const wins = Number(gameStats.totalWon) || 0;
+  const losses = Number(gameStats.totalLost) || 0;
+
+  // Build W/L as colored spans (green wins, red losses) inside the same pill.
+  el.statWL.className = "stat-val";
+  el.statWL.innerHTML =
+    `<span class="wl-w">${wins}</span>` +
+    `<span class="wl-sep">—</span>` +
+    `<span class="wl-l">${losses}</span>`;
+
+  const streak = gameStats.currentStreak || { count: 0, type: "none" };
+  const count = Number(streak.count) || 0;
+
+  if (count === 0) {
+    el.statStreak.textContent = "—";
+    el.statStreak.className = "stat-val";
+  } else {
+    const isWin = streak.type === "win";
+    el.statStreak.textContent = `${count}${isWin ? "W" : "L"}`;
+    el.statStreak.className = `stat-val ${isWin ? "pos" : "neg"}`;
+  }
 }
 
 /* ── Status Bar ── */

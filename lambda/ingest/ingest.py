@@ -32,6 +32,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
       or position.
     - We archive the raw request body to S3.
     - We update one DynamoDB stats row per (user, real_country).
+    - We also record one row per duel for game-level W/L and streak tracking.
     """
 
     try:
@@ -101,6 +102,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         )
         print("player mapping upserted")
 
+        # Compute once and reuse for both the per-round rows and the per-game record.
+        game_won = did_user_team_win(state, user_team)
+
         round_rows = build_round_rows(
             cognito_sub=cognito_sub,
             duel_id=duel_id,
@@ -109,7 +113,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             user_player=user_player,
             opponent_player=opponent_player,
             rounds=rounds,
-            game_won=did_user_team_win(state, user_team),
+            game_won=game_won,
         )
 
         print(f"round_rows count: {len(round_rows)}")
@@ -122,6 +126,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         print("all country stats updated")
 
+        # 2) Record one row per duel — used by summary endpoint for game-level
+        # W/L totals and current streak. Idempotent on duel_id.
+        record_game(
+            cognito_sub=cognito_sub,
+            geoguessr_player_id=geoguessr_player_id,
+            duel_id=duel_id,
+            game_won=game_won,
+            round_rows=round_rows,
+        )
+        print("game record stored")
+
         return response(
             200,
             {
@@ -131,6 +146,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "geoguessr_player_id": geoguessr_player_id,
                 "duel_id": duel_id,
                 "rounds_ingested": len(round_rows),
+                "game_won": game_won,
                 "raw_s3_key": raw_s3_key,
             },
         )
@@ -300,6 +316,56 @@ def update_country_stats(row: Dict[str, Any]) -> None:
             ":damage": Decimal(str(row["damage"])),
             ":distance": Decimal(str(row["distance"])),
             ":round_won": Decimal(str(row["round_won"])),
+        },
+    )
+
+
+def record_game(
+    cognito_sub: str,
+    geoguessr_player_id: str,
+    duel_id: str,
+    game_won: bool,
+    round_rows: List[Dict[str, Any]],
+) -> None:
+    """
+    Stores one row per duel for the user.
+
+    Table keys:
+    - PK (string): USER#<cognito_sub>
+    - SK (string): GAME#<duel_id>
+
+    The SK uses duel_id (not a timestamp) so re-ingesting the same duel
+    overwrites the row instead of producing a duplicate. played_at is fixed on
+    first write via if_not_exists so the original ingestion order — which the
+    summary endpoint relies on for streak calculation — survives any later
+    re-ingest of the same duel.
+    """
+    played_at = datetime.now(timezone.utc).isoformat()
+    rounds_played = len(round_rows)
+    rounds_won = sum(1 for r in round_rows if r.get("round_won"))
+
+    stats_table.update_item(
+        Key={
+            "PK": f"USER#{cognito_sub}",
+            "SK": f"GAME#{duel_id}",
+        },
+        UpdateExpression=(
+            "SET user_id = :user_id, "
+            "geoguessr_player_id = :geoguessr_player_id, "
+            "duel_id = :duel_id, "
+            "game_won = :game_won, "
+            "rounds_played = :rounds_played, "
+            "rounds_won = :rounds_won, "
+            "played_at = if_not_exists(played_at, :played_at)"
+        ),
+        ExpressionAttributeValues={
+            ":user_id": cognito_sub,
+            ":geoguessr_player_id": geoguessr_player_id,
+            ":duel_id": duel_id,
+            ":game_won": Decimal("1") if game_won else Decimal("0"),
+            ":rounds_played": Decimal(str(rounds_played)),
+            ":rounds_won": Decimal(str(rounds_won)),
+            ":played_at": played_at,
         },
     )
 

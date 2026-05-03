@@ -156,10 +156,34 @@
       @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:0.45; } }
       .action-row { padding: 10px 14px; display: flex; gap: 7px; }
 
-      /* ── Stats Strip ── */
-      .stats-row { display: flex; gap: 10px; padding: 12px 18px 0; }
+      /* ── Stats Strip (carousel) ── */
+      .stats-carousel {
+        display: flex; align-items: stretch; gap: 6px;
+        padding: 12px 0 0;
+      }
+      .carousel-btn {
+        flex: 0 0 26px;
+        background: var(--bg-card); border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary); cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all var(--tr); padding: 0;
+      }
+      .carousel-btn:hover:not(:disabled) {
+        border-color: var(--border-light); color: var(--text-primary);
+        background: var(--bg-hover);
+      }
+      .carousel-btn:active:not(:disabled) { transform: scale(0.94); }
+      .carousel-btn:disabled { opacity: 0.25; cursor: default; }
+      .carousel-btn svg { width: 11px; height: 11px; }
+      .carousel-viewport { flex: 1; overflow: hidden; }
+      .carousel-track {
+        display: flex; gap: 10px;
+        transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+        will-change: transform;
+      }
       .stat-box {
-        flex: 1; background: var(--bg-card); border: 1px solid var(--border);
+        flex: 0 0 133px; background: var(--bg-card); border: 1px solid var(--border);
         border-radius: var(--radius-sm); padding: 10px 12px; text-align: center;
       }
       .stat-val {
@@ -167,6 +191,10 @@
         line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: -0.8px;
       }
       .stat-val.neg { color: var(--red); }
+      .stat-val.pos { color: var(--green); }
+      .stat-val .wl-w { color: var(--green); }
+      .stat-val .wl-l { color: var(--red); }
+      .stat-val .wl-sep { color: var(--text-muted); margin: 0 3px; font-weight: 400; }
       .stat-lbl { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-top: 2px; }
 
       /* ── Table Section ── */
@@ -342,19 +370,37 @@
       </div>
 
       <!-- Stats -->
-      <div class="stats-row hidden" id="statPills">
-        <div class="stat-box">
-          <span class="stat-val" id="statCountries">—</span>
-          <span class="stat-lbl">Countries</span>
+      <div class="stats-carousel hidden" id="statPills">
+        <button class="carousel-btn" id="carouselPrev" aria-label="Previous stats" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="carousel-viewport">
+          <div class="carousel-track" id="carouselTrack">
+            <div class="stat-box">
+              <span class="stat-val" id="statCountries">—</span>
+              <span class="stat-lbl">Countries</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="statRounds">—</span>
+              <span class="stat-lbl">Rounds</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val neg" id="statWorstDmg">—</span>
+              <span class="stat-lbl">Worst Net Dmg</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="statWL">—</span>
+              <span class="stat-lbl">W / L</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-val" id="statStreak">—</span>
+              <span class="stat-lbl">Streak</span>
+            </div>
+          </div>
         </div>
-        <div class="stat-box">
-          <span class="stat-val" id="statRounds">—</span>
-          <span class="stat-lbl">Rounds</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-val neg" id="statWorstDmg">—</span>
-          <span class="stat-lbl">Worst Net Dmg</span>
-        </div>
+        <button class="carousel-btn" id="carouselNext" aria-label="Next stats">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
 
       <!-- Country breakdown -->

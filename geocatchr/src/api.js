@@ -23,7 +23,11 @@ export async function fetchSummary() {
       }))
     : [];
 
-  return { rows };
+  // games may be absent if the backend hasn't been redeployed yet — pass
+  // through as null so the popup can render placeholder pills gracefully.
+  const games = data?.games ?? null;
+
+  return { rows, games };
 }
 
 /**
