@@ -1,21 +1,28 @@
 import json
 import os
 from datetime import datetime, timezone
-from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
 
-dynamodb = boto3.resource("dynamodb")
+# Shared duel-processing core (bundled into this function's deploy zip at build
+# time — see build.sh). Both ingest and rehydrate import it so their stats math
+# is identical. It also owns the DynamoDB table handles.
+from duel_core import (
+    STATS_TABLE_NAME,
+    PLAYER_MAP_TABLE_NAME,
+    build_round_rows,
+    did_user_team_win,
+    find_user_player_and_teams,
+    record_game,
+    update_country_stats,
+    upsert_player_mapping,
+)
+
 s3 = boto3.client("s3")
 
-STATS_TABLE_NAME = os.environ["STATS_TABLE_NAME"]
-PLAYER_MAP_TABLE_NAME = os.environ["PLAYER_MAP_TABLE_NAME"]
 RAW_BUCKET_NAME = os.environ["RAW_BUCKET_NAME"]
-
-stats_table = dynamodb.Table(STATS_TABLE_NAME)
-player_map_table = dynamodb.Table(PLAYER_MAP_TABLE_NAME)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -74,8 +81,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 },
             )
 
-        opponent_player = get_first_player(opponent_team) if opponent_team else None
-
         # 1) Archive raw request JSON in S3
         raw_s3_key = archive_raw_request(
             bucket_name=RAW_BUCKET_NAME,
@@ -111,7 +116,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             user_team=user_team,
             opponent_team=opponent_team,
             user_player=user_player,
-            opponent_player=opponent_player,
             rounds=rounds,
             game_won=game_won,
         )
@@ -193,40 +197,6 @@ def parse_json_body(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Player / team resolution
-# ---------------------------------------------------------------------------
-
-def find_user_player_and_teams(
-    teams: List[Dict[str, Any]],
-    geoguessr_player_id: str,
-) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    """
-    Searches all teams for the player whose playerId matches geoguessr_player_id.
-
-    Returns (user_player, user_team, opponent_team).
-    opponent_team is the first team that is not the user's team (None if only one team).
-    """
-    for team in teams:
-        for player in team.get("players") or []:
-            if player.get("playerId") == geoguessr_player_id:
-                opponent_team = next((t for t in teams if t is not team), None)
-                return player, team, opponent_team
-
-    return None, None, None
-
-
-def get_first_player(team: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    players = team.get("players") or []
-    return players[0] if players else None
-
-
-def did_user_team_win(state: Dict[str, Any], user_team: Dict[str, Any]) -> bool:
-    result = state.get("result") or {}
-    winning_team_id = result.get("winningTeamId")
-    return bool(winning_team_id and winning_team_id == user_team.get("id"))
-
-
-# ---------------------------------------------------------------------------
 # S3 archiving
 # ---------------------------------------------------------------------------
 
@@ -237,14 +207,19 @@ def archive_raw_request(
     request_body: Dict[str, Any],
 ) -> str:
     """
-    Stores one raw JSON object per ingest request.
+    Stores one raw JSON object per duel.
+
+    The date partition is derived from the request's own `receivedAt`
+    timestamp rather than ingestion time, so replaying an already-archived
+    duel (e.g. via the rehydrate scripts) resolves to the same S3 key and
+    overwrites in place instead of creating a second copy under today's date.
 
     Example key:
     raw/year=2026/month=03/day=12/player=<cognito_sub>/duel=<duel_id>.json
     """
-    now = datetime.now(timezone.utc)
+    event_time = parse_received_at(request_body.get("receivedAt")) or datetime.now(timezone.utc)
     key = (
-        f"raw/year={now:%Y}/month={now:%m}/day={now:%d}/"
+        f"raw/year={event_time:%Y}/month={event_time:%m}/day={event_time:%d}/"
         f"player={cognito_sub}/duel={duel_id}.json"
     )
 
@@ -257,247 +232,13 @@ def archive_raw_request(
     return key
 
 
-# ---------------------------------------------------------------------------
-# DynamoDB writes
-# ---------------------------------------------------------------------------
-
-def upsert_player_mapping(
-    cognito_sub: str,
-    cognito_username: Optional[str],
-    geoguessr_player_id: str,
-) -> None:
-    """
-    Stores a simple user mapping row in a separate table.
-
-    Table keys:
-    - PK (string): COGNITO#<sub>
-    - SK (string): PROFILE
-    """
-    player_map_table.put_item(
-        Item={
-            "PK": f"COGNITO#{cognito_sub}",
-            "SK": "PROFILE",
-            "cognito_sub": cognito_sub,
-            "cognito_username": cognito_username or "",
-            "geoguessr_player_id": geoguessr_player_id,
-        }
-    )
-
-
-def update_country_stats(row: Dict[str, Any]) -> None:
-    """
-    Updates one country summary row.
-
-    Table keys:
-    - PK (string): USER#<cognito_sub>
-    - SK (string): COUNTRY#<country_code>
-    """
-    stats_table.update_item(
-        Key={
-            "PK": f"USER#{row['user_id']}",
-            "SK": f"COUNTRY#{row['real_country']}",
-        },
-        UpdateExpression=(
-            "SET user_id = :user_id, "
-            "geoguessr_player_id = :geoguessr_player_id, "
-            "real_country = :real_country "
-            "ADD rounds_played :one, "
-            "total_points :points, "
-            "total_damage_taken :damage, "
-            "total_distance :distance, "
-            "rounds_won :round_won"
-        ),
-        ExpressionAttributeValues={
-            ":user_id": row["user_id"],
-            ":geoguessr_player_id": row["geoguessr_player_id"],
-            ":real_country": row["real_country"],
-            ":one": Decimal("1"),
-            ":points": Decimal(str(row["points"])),
-            ":damage": Decimal(str(row["damage"])),
-            ":distance": Decimal(str(row["distance"])),
-            ":round_won": Decimal(str(row["round_won"])),
-        },
-    )
-
-
-def record_game(
-    cognito_sub: str,
-    geoguessr_player_id: str,
-    duel_id: str,
-    game_won: bool,
-    round_rows: List[Dict[str, Any]],
-) -> None:
-    """
-    Stores one row per duel for the user.
-
-    Table keys:
-    - PK (string): USER#<cognito_sub>
-    - SK (string): GAME#<duel_id>
-
-    The SK uses duel_id (not a timestamp) so re-ingesting the same duel
-    overwrites the row instead of producing a duplicate. played_at is fixed on
-    first write via if_not_exists so the original ingestion order — which the
-    summary endpoint relies on for streak calculation — survives any later
-    re-ingest of the same duel.
-    """
-    played_at = datetime.now(timezone.utc).isoformat()
-    rounds_played = len(round_rows)
-    rounds_won = sum(1 for r in round_rows if r.get("round_won"))
-
-    stats_table.update_item(
-        Key={
-            "PK": f"USER#{cognito_sub}",
-            "SK": f"GAME#{duel_id}",
-        },
-        UpdateExpression=(
-            "SET user_id = :user_id, "
-            "geoguessr_player_id = :geoguessr_player_id, "
-            "duel_id = :duel_id, "
-            "game_won = :game_won, "
-            "rounds_played = :rounds_played, "
-            "rounds_won = :rounds_won, "
-            "played_at = if_not_exists(played_at, :played_at)"
-        ),
-        ExpressionAttributeValues={
-            ":user_id": cognito_sub,
-            ":geoguessr_player_id": geoguessr_player_id,
-            ":duel_id": duel_id,
-            ":game_won": Decimal("1") if game_won else Decimal("0"),
-            ":rounds_played": Decimal(str(rounds_played)),
-            ":rounds_won": Decimal(str(rounds_won)),
-            ":played_at": played_at,
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Round-level data extraction
-# ---------------------------------------------------------------------------
-
-def build_round_rows(
-    cognito_sub: str,
-    duel_id: str,
-    user_team: Dict[str, Any],
-    opponent_team: Optional[Dict[str, Any]],
-    user_player: Dict[str, Any],
-    opponent_player: Optional[Dict[str, Any]],
-    rounds: List[Dict[str, Any]],
-    game_won: bool,
-) -> List[Dict[str, Any]]:
-    """
-    Produces one normalized row per round for the authenticated user.
-
-    Multiplier note: each team's roundResults entry carries its own multiplier
-    reflecting what was active when that team dealt damage. We normalize each
-    side's raw damageDealt by *their own* multiplier so the values are
-    comparable across rounds with different multiplier tiers.
-
-    Row shape:
-    {
-        user_id, duel_id, round_num, real_country,
-        points, damage, user_multiplier, distance, round_won, game_won,
-        geoguessr_player_id
-    }
-    """
-
-    user_guesses = {
-        guess["roundNumber"]: guess
-        for guess in (user_player.get("guesses") or [])
-        if "roundNumber" in guess
-    }
-    opponent_guesses = {
-        guess["roundNumber"]: guess
-        for guess in ((opponent_player or {}).get("guesses") or [])
-        if "roundNumber" in guess
-    }
-
-    user_round_results = {
-        rr["roundNumber"]: rr
-        for rr in (user_team.get("roundResults") or [])
-        if "roundNumber" in rr
-    }
-    opp_round_results = {
-        rr["roundNumber"]: rr
-        for rr in ((opponent_team or {}).get("roundResults") or [])
-        if "roundNumber" in rr
-    }
-
-    rows: List[Dict[str, Any]] = []
-
-    for round_obj in rounds:
-        round_num = round_obj.get("roundNumber")
-        if round_num is None:
-            continue
-
-        pano = round_obj.get("panorama") or {}
-        user_guess = user_guesses.get(round_num) or {}
-        opp_guess = opponent_guesses.get(round_num) or {}
-        user_result = user_round_results.get(round_num) or {}
-        opp_result = opp_round_results.get(round_num) or {}
-
-        real_country = pano.get("countryCode") or "unknown"
-
-        points = int(
-            user_result.get("score")
-            if user_result.get("score") is not None
-            else user_guess.get("score", 0)
-        )
-        opp_points = int(
-            opp_result.get("score")
-            if opp_result.get("score") is not None
-            else opp_guess.get("score", 0)
-        )
-
-        # Raw damage values — each sourced from the dealing team's roundResults.
-        outgoing_damage_raw = float(user_result.get("damageDealt", 0))
-        incoming_damage_raw = float(opp_result.get("damageDealt", 0))
-
-        # Each team's multiplier comes from their own roundResults entry for this
-        # round. Using the dealing team's multiplier as the divisor gives the true
-        # base-score equivalent of each damage number, making rounds with different
-        # multiplier tiers directly comparable.
-        user_multiplier = float(user_result.get("multiplier") or 1.0)
-        opp_multiplier = float(opp_result.get("multiplier") or 1.0)
-
-        normalized_outgoing = (
-            outgoing_damage_raw / user_multiplier if user_multiplier > 0 else outgoing_damage_raw
-        )
-        normalized_incoming = (
-            incoming_damage_raw / opp_multiplier if opp_multiplier > 0 else incoming_damage_raw
-        )
-
-        # Positive = net damage taken (bad), negative = net damage dealt (good).
-        net_damage = normalized_incoming - normalized_outgoing
-
-        distance = float(user_guess.get("distance", 0.0))
-        round_won = 1 if points > opp_points else 0
-
-        print(
-            f"  Round {round_num:>2} | country={real_country} | "
-            f"pts={points} opp_pts={opp_points} | "
-            f"out_dmg={outgoing_damage_raw:.0f} (x{user_multiplier}) "
-            f"in_dmg={incoming_damage_raw:.0f} (x{opp_multiplier}) | "
-            f"net_dmg={net_damage:.2f} | "
-            f"dist={distance:.0f}m | "
-            f"won={round_won}"
-        )
-
-        row = {
-            "user_id": cognito_sub,
-            "geoguessr_player_id": user_player.get("playerId"),
-            "duel_id": duel_id,
-            "round_num": int(round_num),
-            "real_country": real_country,
-            "points": points,
-            "damage": net_damage,
-            "user_multiplier": user_multiplier,
-            "distance": distance,
-            "round_won": round_won,
-            "game_won": 1 if game_won else 0,
-        }
-        rows.append(row)
-
-    return rows
+def parse_received_at(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------
