@@ -97,3 +97,52 @@ export async function forwardDuelPayload(message, sender) {
     responseText
   };
 }
+
+/**
+ * Called when a daily-shop-claim fetch is intercepted on the page. Reads the
+ * full geoguessr.com cookie jar (many of the relevant cookies, like _ncfa,
+ * are httpOnly and only readable here via chrome.cookies — not from the
+ * content script) and forwards it along with the captured request headers
+ * and browser fingerprint info, so the backend can store what's needed to
+ * replay this request later.
+ */
+export async function captureShopClaimCredentials(message, sender) {
+  const accessToken = await getValidAccessToken();
+
+  // Match the granted host_permissions scope (https://www.geoguessr.com/*)
+  // exactly — filtering by a broader "domain" here returns zero cookies,
+  // since chrome.cookies only surfaces cookies the extension actually has
+  // host permission to read.
+  const rawCookies = await chrome.cookies.getAll({ url: "https://www.geoguessr.com/" });
+  console.log("[GeoCatchr] chrome.cookies.getAll returned", rawCookies.length, "cookies:", rawCookies.map((c) => c.name));
+  const cookies = Object.fromEntries(rawCookies.map((cookie) => [cookie.name, cookie.value]));
+
+  const body = {
+    capturedAt: message?.payload?.capturedAt || new Date().toISOString(),
+    pageUrl: sender?.tab?.url || message?.payload?.pageUrl || null,
+    referrer: message?.payload?.referrer || null,
+    cookies,
+    requestHeaders: message?.payload?.requestHeaders || {},
+    navigatorInfo: message?.payload?.navigatorInfo || {}
+  };
+
+  const response = await fetch(CONFIG.api.shopClaimUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  const responseText = await response.text().catch(() => "");
+
+  if (!response.ok) {
+    throw new Error(responseText || `Saving shop-claim credentials failed with status ${response.status}`);
+  }
+
+  return {
+    status: response.status,
+    responseText
+  };
+}

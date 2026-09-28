@@ -92,4 +92,87 @@
   window.WebSocket = PatchedWebSocket;
 
   console.log("[GeoGuessr Tracker] MAIN world WebSocket hook installed");
+
+  // ---------------------------------------------------------------------
+  // Detect the daily shop-claim request so we can capture what's needed
+  // to replay it later. Cookies aren't readable here (many are httpOnly);
+  // the service worker fetches those separately via chrome.cookies.
+  // ---------------------------------------------------------------------
+
+  const originalFetch = window.fetch.bind(window);
+
+  function normalizeHeaders(input, init) {
+    const source = init?.headers ?? (input instanceof Request ? input.headers : null);
+    if (!source) return {};
+
+    if (source instanceof Headers) {
+      return Object.fromEntries(source.entries());
+    }
+
+    if (Array.isArray(source)) {
+      return Object.fromEntries(source);
+    }
+
+    return { ...source };
+  }
+
+  async function captureNavigatorInfo() {
+    const info = {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      languages: navigator.languages
+    };
+
+    if (navigator.userAgentData?.getHighEntropyValues) {
+      try {
+        info.userAgentData = await navigator.userAgentData.getHighEntropyValues([
+          "brands",
+          "mobile",
+          "platform",
+          "platformVersion",
+          "architecture",
+          "bitness",
+          "model",
+          "fullVersionList"
+        ]);
+      } catch {
+        // Best effort — not all contexts support high-entropy values.
+      }
+    }
+
+    return info;
+  }
+
+  window.fetch = async function (input, init) {
+    const url = typeof input === "string" ? input : input?.url;
+    const requestHeaders = normalizeHeaders(input, init);
+
+    const response = await originalFetch(input, init);
+
+    if (url?.includes("/api/v4/webshop/daily-shop-claim") && response.ok) {
+      // Fire-and-forget: don't delay the page's own handling of the response.
+      captureNavigatorInfo()
+        .then((navigatorInfo) => {
+          window.postMessage(
+            {
+              source: "geoguessr-duel-tracker",
+              type: "DAILY_SHOP_CLAIMED",
+              payload: {
+                capturedAt: new Date().toISOString(),
+                pageUrl: location.href,
+                referrer: document.referrer,
+                requestHeaders,
+                navigatorInfo
+              }
+            },
+            "*"
+          );
+        })
+        .catch(() => {});
+    }
+
+    return response;
+  };
+
+  console.log("[GeoGuessr Tracker] MAIN world fetch hook installed");
 })();
