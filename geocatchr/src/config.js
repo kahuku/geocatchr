@@ -1,7 +1,8 @@
 export const CONFIG = {
   api: {
     ingestUrl: "https://f53qk2aal4.execute-api.us-east-1.amazonaws.com/ingest-duel",
-    summaryUrl: "https://f53qk2aal4.execute-api.us-east-1.amazonaws.com/summary"
+    summaryUrl: "https://f53qk2aal4.execute-api.us-east-1.amazonaws.com/summary",
+    shopClaimUrl: "https://f53qk2aal4.execute-api.us-east-1.amazonaws.com/shop-claim-credentials"
   },
 
   auth: {

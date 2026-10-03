@@ -84,6 +84,40 @@ def upsert_player_mapping(
     )
 
 
+def save_shop_claim_snapshot(
+    cognito_sub: str,
+    cookies: Dict[str, str],
+    request_headers: Dict[str, str],
+    navigator_info: Dict[str, Any],
+    captured_at: str,
+) -> None:
+    """
+    Stores everything needed to later replay the daily-shop-claim request,
+    on the same per-user profile row as upsert_player_mapping.
+
+    Uses update_item (not put_item) so this doesn't clobber the
+    cognito_username/geoguessr_player_id attributes already on that row.
+    """
+    player_map_table.update_item(
+        Key={
+            "PK": f"COGNITO#{cognito_sub}",
+            "SK": "PROFILE",
+        },
+        UpdateExpression=(
+            "SET shop_claim_cookies = :cookies, "
+            "shop_claim_request_headers = :headers, "
+            "shop_claim_navigator_info = :navigator_info, "
+            "shop_claim_captured_at = :captured_at"
+        ),
+        ExpressionAttributeValues={
+            ":cookies": cookies,
+            ":headers": request_headers,
+            ":navigator_info": navigator_info,
+            ":captured_at": captured_at,
+        },
+    )
+
+
 def update_country_stats(row: Dict[str, Any]) -> None:
     """
     Updates one country summary row.
